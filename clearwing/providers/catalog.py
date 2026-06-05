@@ -175,6 +175,18 @@ PROVIDER_PRESETS: tuple[ProviderPreset, ...] = (
         auth_flow="openai_codex",
     ),
     ProviderPreset(
+        key="llm",
+        display_name="LLM CLI configured model",
+        description="Use Simon Willison's `llm` Python library and configured models/plugins.",
+        docs_url="https://llm.datasette.io/",
+        default_base_url=None,
+        default_model="",
+        api_key_env_var=None,
+        is_local=True,
+        is_openai_compat=False,
+        provider_adapter="llm",
+    ),
+    ProviderPreset(
         key="together",
         display_name="Together AI",
         description="Managed hosting for Llama / Qwen / DeepSeek / Mixtral.",

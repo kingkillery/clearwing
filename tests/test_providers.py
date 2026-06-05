@@ -70,6 +70,7 @@ class TestProviderPresets:
         assert "openai" in PROVIDER_PRESETS
         assert "google" in PROVIDER_PRESETS
         assert "ollama" in PROVIDER_PRESETS
+        assert "llm" in PROVIDER_PRESETS
 
     def test_anthropic_preset(self):
         preset = PROVIDER_PRESETS["anthropic"]
@@ -84,6 +85,11 @@ class TestProviderPresets:
     def test_ollama_has_default_base_url(self):
         preset = PROVIDER_PRESETS["ollama"]
         assert preset["default_base_url"] == "http://localhost:11434"
+
+    def test_llm_preset_is_delegated(self):
+        preset = PROVIDER_PRESETS["llm"]
+        assert preset["env_key"] == ""
+        assert preset["models"] == []
 
 
 # --- DEFAULT_ROUTES ---
@@ -239,3 +245,10 @@ class TestCreateLlmErrors:
         assert isinstance(llm, ChatModel)
         assert llm.provider_name == "ollama"
         assert llm.base_url == "http://localhost:11434"
+
+    def test_llm_provider_uses_llm_adapter(self):
+        mgr = ProviderManager()
+        llm = mgr._create_llm("llm", "")
+        assert isinstance(llm, ChatModel)
+        assert llm.provider_name == "llm"
+        assert llm.model_name == ""

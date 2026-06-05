@@ -4,12 +4,28 @@ from typing import Any
 
 from clearwing.agent.runtime import NativeAgentGraph, populate_knowledge_graph
 from clearwing.agent.state import AgentState
+from clearwing.agent.tools.ops.mcp_tools import connect_mcp_server
 from clearwing.capabilities import capabilities
+from clearwing.core.config import Config
 from clearwing.llm import ChatModel
-from clearwing.providers import ProviderManager, resolve_llm_endpoint
+from clearwing.providers import DEFAULT_ANTHROPIC_MODEL, ProviderManager, resolve_llm_endpoint
 
 from .prompts import build_system_prompt
 from .tools import get_all_tools, get_custom_tools
+
+
+def _connect_configured_mcp_servers() -> None:
+    """Best-effort startup connection for MCP servers in config.yaml."""
+    for name, cfg in Config().get_mcp_servers().items():
+        command = str(cfg.get("command") or "").strip()
+        if not command:
+            continue
+        raw_args = cfg.get("args", [])
+        args = [str(arg) for arg in raw_args] if isinstance(raw_args, list) else []
+        result = connect_mcp_server.invoke({"name": name, "command": command, "args": args})
+        if isinstance(result, dict) and result.get("status") == "error":
+            # Do not fail agent startup on an optional external MCP server.
+            continue
 
 
 def _default_pentest_state_updater(tool_name: str, data: Any, state: dict) -> dict:
@@ -97,8 +113,19 @@ def _create_llm(
     base_url: str | None = None,
     api_key: str | None = None,
 ) -> ChatModel:
+    cli_model = model_name
+    if not base_url and not api_key:
+        configured_endpoint = resolve_llm_endpoint(config_provider=None)
+        if configured_endpoint.source == "config":
+            if model_name in {DEFAULT_ANTHROPIC_MODEL, configured_endpoint.model}:
+                # Treat the built-in default, or a display model copied from
+                # config, as no CLI override so configured providers such as
+                # `adapter: llm` continue to win.
+                cli_model = None
+        elif model_name == DEFAULT_ANTHROPIC_MODEL:
+            cli_model = None
     endpoint = resolve_llm_endpoint(
-        cli_model=model_name,
+        cli_model=cli_model,
         cli_base_url=base_url,
         cli_api_key=api_key,
     )
@@ -112,6 +139,7 @@ def create_agent(
     base_url: str = None,
     api_key: str = None,
 ):
+    _connect_configured_mcp_servers()
     all_tools = get_all_tools()
     if custom_tools:
         all_tools.extend(custom_tools)

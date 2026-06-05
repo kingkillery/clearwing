@@ -172,3 +172,32 @@ class TestCreateAgentDelegatesToBuildReactGraph:
             call_args = mock_llm.bind_tools.call_args
             tool_list = call_args[0][0] if call_args[0] else call_args[1].get("tools", [])
             assert my_extra_tool in tool_list
+
+    def test_create_agent_connects_configured_mcp_servers(self):
+        fake_config = MagicMock()
+        fake_config.get_mcp_servers.return_value = {
+            "desktop-commander": {
+                "command": "desktop-commander",
+                "args": [],
+            }
+        }
+
+        with (
+            patch("clearwing.agent.graph.Config", return_value=fake_config, create=True),
+            patch("clearwing.agent.graph.connect_mcp_server", create=True) as mock_connect,
+            patch("clearwing.agent.graph._create_llm") as mock_create_llm,
+        ):
+            mock_connect.invoke.return_value = {"status": "connected"}
+            mock_llm = MagicMock()
+            mock_llm.bind_tools = MagicMock(return_value=MagicMock())
+            mock_create_llm.return_value = mock_llm
+
+            create_agent(model_name="claude-sonnet-4-6")
+
+            mock_connect.invoke.assert_called_once_with(
+                {
+                    "name": "desktop-commander",
+                    "command": "desktop-commander",
+                    "args": [],
+                }
+            )

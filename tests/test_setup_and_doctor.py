@@ -93,6 +93,7 @@ class TestProviderCatalog:
             "openai_codex",
             "ollama",
             "gemini",
+            "llm",
         }
         for preset in KNOWN_PROVIDERS:
             assert preset.provider_adapter, (
@@ -121,6 +122,13 @@ class TestProviderCatalog:
         assert resp is not None and resp.provider_adapter == "openai_resp"
         # Same API key env var, different wire shape
         assert chat.api_key_env_var == resp.api_key_env_var == "OPENAI_API_KEY"
+
+    def test_llm_preset_exists(self):
+        preset = preset_by_key("llm")
+        assert preset is not None
+        assert preset.provider_adapter == "llm"
+        assert not preset.is_openai_compat
+        assert preset.default_base_url is None
 
 
 # --- Setup wizard: _mask_secret -------------------------------------------
@@ -297,6 +305,18 @@ class TestWriteConfig:
                 "adapter": "openai_codex",
             }
         }
+
+    def test_llm_provider_writes_adapter_without_credentials(self, tmp_cli):
+        preset = preset_by_key("llm")
+        _write_config(
+            tmp_cli,
+            preset,
+            base_url=None,
+            api_key_literal="",
+            model="",
+        )
+        data = yaml.safe_load(tmp_cli.config.DEFAULT_CONFIG_PATH.read_text())
+        assert data == {"provider": {"adapter": "llm"}}
 
 
 # --- Doctor: DoctorCheck + DoctorSection aggregation ---------------------

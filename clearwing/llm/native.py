@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import random
@@ -183,6 +184,16 @@ class AsyncLLMClient:
         response_schema_name: str | None = None,
         response_schema_description: str | None = None,
     ) -> ChatResponse:
+        if self.provider_name == "llm":
+            return await self._achat_via_llm(
+                messages=messages,
+                system=system,
+                tools=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_schema=response_schema,
+            )
+
         request_tools = None
         if tools:
             request_tools = [
@@ -255,6 +266,19 @@ class AsyncLLMClient:
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
+
+        if self.provider_name == "llm":
+            response = await self.achat(
+                messages=messages,
+                system=system,
+                tools=tools,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            text = response_text(response)
+            if text:
+                on_text_delta(text)
+            return response
 
         request_tools = None
         if tools:
@@ -377,6 +401,74 @@ class AsyncLLMClient:
             )
         return client_cls()
 
+    async def _achat_via_llm(
+        self,
+        *,
+        messages: list[ChatMessage],
+        system: str | None = None,
+        tools: list[NativeToolSpec] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        response_schema: type[BaseModel] | None = None,
+    ) -> ChatResponse:
+        async with self._semaphore:
+            return await asyncio.to_thread(
+                self._chat_via_llm_sync,
+                messages,
+                system,
+                tools,
+                temperature,
+                max_tokens,
+                response_schema,
+            )
+
+    def _chat_via_llm_sync(
+        self,
+        messages: list[ChatMessage],
+        system: str | None,
+        tools: list[NativeToolSpec] | None,
+        temperature: float | None,
+        max_tokens: int | None,
+        response_schema: type[BaseModel] | None,
+    ) -> ChatResponse:
+        try:
+            import llm as llm_sdk
+        except ImportError as exc:
+            raise RuntimeError(
+                "The `llm` Python package is not installed. "
+                "Install it with `uv sync --extra llm` or `uv pip install llm`."
+            ) from exc
+
+        model = llm_sdk.get_model(self.model_name or None)
+        kwargs: dict[str, Any] = {"system": system or self.default_system}
+        if self.api_key:
+            kwargs["key"] = self.api_key
+        options: dict[str, Any] = {}
+        if temperature is not None:
+            options["temperature"] = temperature
+        if max_tokens is not None:
+            options["max_tokens"] = max_tokens
+        if options:
+            kwargs["options"] = options
+        if response_schema is not None:
+            kwargs["schema"] = response_schema
+        prompt = _llm_prompt_from_messages(messages)
+        if tools:
+            kwargs["tools"] = [_llm_tool_callable(tool) for tool in tools]
+
+        try:
+            response = model.prompt(prompt, **kwargs)
+        except Exception as exc:
+            if "support tools" not in str(exc).lower() or "tools" not in kwargs:
+                raise
+            logger.warning(
+                "`llm` model %s does not support tools; retrying without tool binding",
+                self.model_name or "<default>",
+            )
+            kwargs.pop("tools", None)
+            response = model.prompt(prompt, **kwargs)
+        return ChatResponse(content=[{"text": response.text()}])
+
     async def _achat_with_provider_policy(
         self,
         client: Client,
@@ -472,6 +564,43 @@ def extract_json_array(text: str) -> list[Any]:
     if not isinstance(parsed, list):
         raise ValueError("response JSON was not an array")
     return parsed
+
+
+def _llm_prompt_from_messages(messages: list[ChatMessage]) -> str:
+    parts: list[str] = []
+    for message in messages:
+        role = str(getattr(message, "role", "user") or "user")
+        content = str(getattr(message, "content", "") or "")
+        if not content:
+            continue
+        if role == "user":
+            parts.append(content)
+        else:
+            parts.append(f"{role}: {content}")
+    return "\n\n".join(parts)
+
+
+def _llm_tool_callable(tool: NativeToolSpec):
+    properties = tool.schema.get("properties", {}) if isinstance(tool.schema, dict) else {}
+    required = set(tool.schema.get("required", [])) if isinstance(tool.schema, dict) else set()
+    parameters: list[inspect.Parameter] = []
+    for name in properties:
+        default = inspect.Parameter.empty if name in required else None
+        parameters.append(
+            inspect.Parameter(
+                name,
+                inspect.Parameter.KEYWORD_ONLY,
+                default=default,
+            )
+        )
+
+    def call_tool(**kwargs: Any) -> Any:
+        return tool.invoke(kwargs)
+
+    call_tool.__name__ = re.sub(r"\W+", "_", tool.name).strip("_") or "clearwing_tool"
+    call_tool.__doc__ = tool.description
+    call_tool.__signature__ = inspect.Signature(parameters)  # type: ignore[attr-defined]
+    return call_tool
 
 
 def _json_spec_from_model(

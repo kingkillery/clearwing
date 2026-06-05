@@ -186,6 +186,24 @@ def _check_llm_provider(cli, *, skip_invoke: bool) -> DoctorSection:
     section.add(DoctorCheck("Source", STATUS_OK, endpoint.source))
 
     # Credential check
+    if endpoint.provider == "llm" or endpoint.adapter == "llm":
+        section.add(DoctorCheck("Credentials", STATUS_OK, "`llm` manages credentials"))
+        if importlib.util.find_spec("llm") is None:
+            section.add(
+                DoctorCheck(
+                    "Test invoke",
+                    STATUS_ERR,
+                    "`llm` Python package is not installed",
+                    hint="Install with `uv sync --extra llm` or `uv pip install llm`.",
+                )
+            )
+            return section
+        if skip_invoke:
+            section.add(DoctorCheck("Test invoke", STATUS_SKIP, "skipped (--skip-llm-invoke)"))
+            return section
+        section.add(_invoke_test(endpoint))
+        return section
+
     if endpoint.provider == "openai_codex" and not endpoint.api_key:
         section.add(
             DoctorCheck(
@@ -509,6 +527,7 @@ def _check_optional_extras() -> DoctorSection:
             None,
             "Native LLM transport — required runtime dependency",
         ),
+        ("llm", "llm", "Simon Willison LLM CLI/Python provider adapter"),
         (
             "playwright",
             "browser",
@@ -586,6 +605,16 @@ def _check_network(cli) -> DoctorSection:
     endpoint = resolve_llm_endpoint(
         config_provider=cli.config.get_provider_section(),
     )
+
+    if endpoint.provider == "llm" or endpoint.adapter == "llm":
+        section.add(
+            DoctorCheck(
+                "Network",
+                STATUS_SKIP,
+                "`llm` provider controls its own local/remote endpoint",
+            )
+        )
+        return section
 
     host = "api.anthropic.com"
     if endpoint.base_url:

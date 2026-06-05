@@ -15,6 +15,7 @@ from clearwing.agent.tools.ops.dynamic_tool_creator import get_custom_tools
 from clearwing.agent.tools.ops.kali_docker_tool import kali_cleanup
 from clearwing.data.memory import SessionStore
 from clearwing.observability.telemetry import CostTracker
+from clearwing.providers import DEFAULT_ANTHROPIC_MODEL, resolve_llm_endpoint
 from clearwing.ui.tui import ClearwingApp
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ def handle(cli, args):
     """Run the interactive AI agent loop."""
     if not _preflight_check(cli, args):
         return
+    args.model = _effective_model_for_display(cli, args)
 
     # Set up cost limit
     cost_limit = getattr(args, "cost_limit", None)
@@ -87,20 +89,27 @@ def _preflight_check(cli, args) -> bool:
     """Fast checks before agent starts."""
     errors = []
 
-    # Any of these sources is enough to build an LLM:
-    #   CLI flags (--base-url / --api-key)
-    #   CLEARWING_BASE_URL / CLEARWING_API_KEY env vars
-    #   ANTHROPIC_API_KEY env var (the pre-multi-provider default)
     has_cli_endpoint = bool(getattr(args, "base_url", None) or getattr(args, "api_key", None))
     has_clearwing_env = bool(
         os.environ.get("CLEARWING_BASE_URL") or os.environ.get("CLEARWING_API_KEY")
     )
-    has_anthropic_env = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    if not (has_cli_endpoint or has_clearwing_env or has_anthropic_env):
+    config_provider = cli.config.get_provider_section()
+    cli_model = getattr(args, "model", None)
+    if not has_cli_endpoint and cli_model == DEFAULT_ANTHROPIC_MODEL:
+        cli_model = None
+    endpoint = resolve_llm_endpoint(
+        cli_model=cli_model,
+        cli_base_url=getattr(args, "base_url", None),
+        cli_api_key=getattr(args, "api_key", None),
+        config_provider=config_provider,
+    )
+    has_llm_adapter = endpoint.provider == "llm" or endpoint.adapter == "llm"
+    if not endpoint.api_key and endpoint.source == "default" and not has_llm_adapter:
         errors.append(
             "No LLM credentials found. Set ANTHROPIC_API_KEY for Anthropic direct, "
             "or CLEARWING_BASE_URL + CLEARWING_API_KEY for an OpenAI-compatible endpoint "
             "(OpenRouter, Ollama, LM Studio, vLLM, etc.), "
+            "run `clearwing setup --provider llm` to use the llm CLI provider, "
             "or pass --base-url and --api-key on the command line. "
             "See docs/providers.md for the full list of supported backends."
         )
@@ -114,7 +123,7 @@ def _preflight_check(cli, args) -> bool:
     # Skip the "valid model" warning when the user is pointing at a
     # custom endpoint — we have no way to know what models OpenRouter /
     # Ollama / LM Studio / vLLM serve.
-    if not has_cli_endpoint and not has_clearwing_env:
+    if not has_cli_endpoint and not has_clearwing_env and not config_provider:
         valid_models = [
             "claude-sonnet-4-6",
             "claude-opus-4-7",
@@ -132,6 +141,32 @@ def _preflight_check(cli, args) -> bool:
             cli.console.print(f"[red]Preflight error: {err}[/red]")
         return False
     return True
+
+
+def _effective_model_for_display(cli, args) -> str:
+    has_cli_endpoint = bool(getattr(args, "base_url", None) or getattr(args, "api_key", None))
+    cli_model = getattr(args, "model", None)
+    if not has_cli_endpoint and cli_model == DEFAULT_ANTHROPIC_MODEL:
+        cli_model = None
+    endpoint = resolve_llm_endpoint(
+        cli_model=cli_model,
+        cli_base_url=getattr(args, "base_url", None),
+        cli_api_key=getattr(args, "api_key", None),
+        config_provider=cli.config.get_provider_section(),
+    )
+    if endpoint.provider == "llm" or endpoint.adapter == "llm":
+        return endpoint.model or _llm_default_model_name() or "llm default model"
+    return endpoint.model or getattr(args, "model", DEFAULT_ANTHROPIC_MODEL)
+
+
+def _llm_default_model_name() -> str | None:
+    try:
+        import llm as llm_sdk
+
+        model = llm_sdk.get_model(None)
+        return str(getattr(model, "model_id", "") or "") or None
+    except Exception:
+        return None
 
 
 def _run_tui(cli, args, session=None):

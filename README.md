@@ -11,7 +11,9 @@ The challenge:  Produce similar results as Glasswing - using models everyone has
 **Autonomous vulnerability scanner and source-code hunter.** Built on
 `genai-pyo3`, a native Rust-backed LLM runtime speaking every major
 provider (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio, Together,
-Groq, DeepSeek, MiniMax, Gemini, any OpenAI-compatible endpoint).
+Groq, DeepSeek, MiniMax, Gemini, any OpenAI-compatible endpoint), plus
+optional delegation to Simon Willison's configured `llm` CLI/Python
+library.
 
 Clearwing is a dual-mode offensive-security tool:
 
@@ -92,6 +94,9 @@ export ANTHROPIC_API_KEY=sk-ant-...
 export CLEARWING_BASE_URL=https://openrouter.ai/api/v1
 export CLEARWING_API_KEY=sk-or-...
 export CLEARWING_MODEL=anthropic/claude-opus-4
+
+# Or reuse models and keys already configured by the `llm` CLI:
+clearwing setup --provider llm
 ```
 
 See [`docs/providers.md`](docs/providers.md) for provider-specific

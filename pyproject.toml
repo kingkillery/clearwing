@@ -87,8 +87,9 @@ docs = [
     "mkdocs-material>=9.4.0",
     "mkdocstrings[python]>=0.24.0",
 ]
+llm = ["llm>=0.26"]
 all = [
-    "clearwing[metasploit,browser,vector,dev,docs]",
+    "clearwing[metasploit,browser,vector,dev,docs,llm]",
 ]
 
 [project.urls]

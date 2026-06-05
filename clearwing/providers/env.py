@@ -22,7 +22,6 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -100,6 +99,9 @@ class LLMEndpoint:
 
     def describe(self) -> str:
         """Human-readable one-liner for preflight / debug output."""
+        if self.provider == "llm" or self.adapter == "llm":
+            model = self.model or "(llm default model)"
+            return f"{model} via llm configured models (source: {self.source})"
         target = self.base_url or "https://api.anthropic.com"
         return f"{self.model} via {target} (source: {self.source})"
 
@@ -225,6 +227,15 @@ def resolve_llm_endpoint(
         cfg_model = config_provider.get("model")
         cfg_api_key = _resolve_config_secret(config_provider.get("api_key"))
         cfg_adapter = config_provider.get("adapter")  # None if unset
+        if str(cfg_adapter or "").strip().lower() == "llm":
+            return LLMEndpoint(
+                provider="llm",
+                model=str(cfg_model or ""),
+                base_url=None,
+                api_key=cfg_api_key,
+                source="config",
+                adapter="llm",
+            )
         if cfg_base_url:
             if _is_anthropic_compat_base_url(cfg_base_url):
                 return LLMEndpoint(

@@ -197,6 +197,19 @@ class TestConfigPrecedence:
         assert ep.api_key == "access-token"
         assert not ep.is_openai_compat
 
+    def test_config_llm_adapter_routes_to_llm(self, clean_env):
+        ep = resolve_llm_endpoint(
+            config_provider={
+                "adapter": "llm",
+                "model": "claude-3.5-sonnet",
+            }
+        )
+        assert ep.provider == "llm"
+        assert ep.adapter == "llm"
+        assert ep.model == "claude-3.5-sonnet"
+        assert ep.api_key is None
+        assert "llm configured models" in ep.describe()
+
 
 # --- Default path ----------------------------------------------------------
 
@@ -291,6 +304,7 @@ class TestLLMEndpointHelpers:
     def test_is_openai_compat_flag(self):
         assert LLMEndpoint("openai_compat", "x").is_openai_compat
         assert not LLMEndpoint("anthropic", "x").is_openai_compat
+        assert not LLMEndpoint("llm", "").is_openai_compat
 
     def test_is_anthropic_direct_requires_no_base_url(self):
         assert LLMEndpoint("anthropic", "x").is_anthropic_direct

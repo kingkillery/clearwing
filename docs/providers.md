@@ -5,8 +5,8 @@ which speaks every major provider directly. The wizard
 (`clearwing setup`) exposes a menu of the known backends, each
 carrying an explicit **adapter** name that decides the wire
 protocol — `anthropic`, `openai` (chat completions), `openai_resp`
-(responses API), `openai_codex` (ChatGPT OAuth), `ollama`, or
-`gemini`. There's no heuristic guessing: the preset you pick in
+(responses API), `openai_codex` (ChatGPT OAuth), `ollama`, `gemini`,
+or `llm` (Simon Willison's configured `llm` CLI/Python library). There's no heuristic guessing: the preset you pick in
 the wizard persists `adapter:` into `~/.clearwing/config.yaml`
 alongside `base_url`, `api_key`, and `model`.
 
@@ -48,6 +48,7 @@ Direct variants:
 ```bash
 clearwing setup --provider openrouter
 clearwing setup --provider ollama --no-test
+clearwing setup --provider llm --no-test
 clearwing init   # alias
 ```
 
@@ -101,6 +102,35 @@ clearwing sourcehunt /path/to/repo
 
 Adapter: `anthropic` (the wizard writes this automatically; no
 heuristic is involved).
+
+## LLM CLI configured models
+
+Clearwing can delegate model calls to Simon Willison's `llm` Python
+library. This is useful when you already have models, aliases, API keys,
+and provider plugins configured through the `llm` CLI and want Clearwing
+to reuse that setup.
+
+```bash
+uv sync --extra llm
+llm models
+clearwing setup --provider llm
+```
+
+Leave the model blank to use `llm`'s default model, or enter any model ID
+or alias shown by `llm models`.
+
+`~/.clearwing/config.yaml`:
+
+```yaml
+provider:
+  adapter: llm
+  model: claude-3.5-sonnet  # optional; omit or leave blank for llm default
+```
+
+Clearwing does not store an API key for this provider. The `llm` library
+resolves credentials from its own key store, plugins, and environment
+variables. `clearwing doctor` checks that the Python package is importable
+and can run a live invoke unless `--skip-llm-invoke` is passed.
 
 ## OpenAI (Chat Completions API)
 

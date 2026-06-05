@@ -25,7 +25,7 @@ class ProviderConfig:
     # Optional explicit genai-pyo3 adapter name. When set, overrides the
     # base-URL heuristic in _adapter_for_base_url. Expected values:
     # "openai", "openai_resp", "openai_codex", "anthropic", "gemini",
-    # "ollama". Left empty for the default behavior (heuristic).
+    # "ollama", "llm". Left empty for the default behavior (heuristic).
     adapter: str = ""
 
 
@@ -61,6 +61,10 @@ PROVIDER_PRESETS = {
         "env_key": "",
         "models": [],  # dynamic
         "default_base_url": "http://localhost:11434",
+    },
+    "llm": {
+        "env_key": "",
+        "models": [],  # delegated to `llm models`
     },
 }
 
@@ -401,6 +405,14 @@ class ProviderManager:
                 provider_name="ollama",
             )
 
+        elif provider == "llm":
+            return ChatModel(
+                model_name=model,
+                base_url=None,
+                api_key=config.api_key if config else "",
+                provider_name="llm",
+            )
+
         else:
             if config and config.base_url:
                 return ChatModel(
@@ -453,6 +465,15 @@ class ProviderManager:
                 api_key=config.api_key if config else "",
                 provider_name="ollama",
                 max_concurrency=_native_concurrency_for_task(task, "ollama"),
+            )
+
+        if provider == "llm":
+            return AsyncLLMClient(
+                model_name=model,
+                base_url=None,
+                api_key=config.api_key if config else "",
+                provider_name="llm",
+                max_concurrency=_native_concurrency_for_task(task, "llm"),
             )
 
         if config and config.base_url:
@@ -519,6 +540,8 @@ def _adapter_for_endpoint(endpoint: LLMEndpoint) -> str:
         return "anthropic"
     if endpoint.provider == "openai_codex":
         return "openai_codex"
+    if endpoint.provider == "llm":
+        return "llm"
     return _adapter_for_base_url(endpoint.base_url, endpoint.model)
 
 

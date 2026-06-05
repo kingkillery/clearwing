@@ -49,7 +49,7 @@ def add_parser(subparsers):
         metavar="KEY",
         help=(
             "Skip the menu and configure this provider directly "
-            "(e.g. openrouter, ollama, lmstudio, anthropic, openai, "
+            "(e.g. openrouter, ollama, lmstudio, llm, anthropic, openai, "
             "openai-oauth, together, groq, deepseek, fireworks, custom)"
         ),
     )
@@ -116,7 +116,7 @@ def handle(cli, args) -> None:
     )
     model = _prompt_model(console, preset)
 
-    if model == "" and preset.key != "anthropic":
+    if model == "" and preset.key not in {"anthropic", "llm"}:
         console.print("[red]Error: model cannot be empty for OpenAI-compat endpoints.[/red]")
         return
 
@@ -208,6 +208,10 @@ def _prompt_base_url(console: Console, preset: ProviderPreset) -> str:
         )
         return preset.default_base_url or "https://chatgpt.com/backend-api"
 
+    if preset.provider_adapter == "llm":
+        console.print("[dim]LLM uses models and keys already configured by the `llm` CLI.[/dim]")
+        return ""
+
     if preset.default_base_url is None:
         # Anthropic direct — no base_url to configure
         console.print("[dim]Anthropic direct uses api.anthropic.com (no base URL to set).[/dim]")
@@ -271,6 +275,10 @@ def _prompt_api_key(
         console.print(f"[green]OpenAI OAuth login complete.[/green] account_id={creds.account_id}")
         return ""
 
+    if preset.provider_adapter == "llm":
+        console.print("[dim]No Clearwing API key is stored; `llm` resolves credentials itself.[/dim]")
+        return ""
+
     if preset.is_local and preset.api_key_env_var is None:
         placeholder = "ollama" if "11434" in (preset.default_base_url or "") else "not-needed"
         console.print(
@@ -305,6 +313,9 @@ def _prompt_api_key(
 
 def _prompt_model(console: Console, preset: ProviderPreset) -> str:
     """Prompt for the default model identifier."""
+    if preset.provider_adapter == "llm":
+        console.print("\n[dim]Leave blank to use `llm`'s default model, or enter any `llm models` id/alias.[/dim]")
+
     if preset.alt_models:
         console.print("\n[dim]Common models for this provider:[/dim]")
         console.print(f"[dim]  {preset.default_model} (default)[/dim]")
@@ -431,6 +442,36 @@ def _run_test_invoke(
             base_url=base_url,
             api_key=None,
             source="cli",
+        )
+        console.print("\n[dim]Testing endpoint...[/dim]", end=" ")
+        try:
+            llm = ProviderManager.for_endpoint(endpoint).get_llm("default")
+            start = time.monotonic()
+            response = llm.invoke("Reply with exactly the word PONG.")
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+        except Exception as exc:
+            console.print(f"\n[red]Test failed: {exc}[/red]")
+            console.print(
+                "[yellow]The config was still written. "
+                "Run `clearwing doctor` for a fuller diagnosis.[/yellow]"
+            )
+            return
+
+        content = getattr(response, "content", str(response))
+        if isinstance(content, list):
+            content = " ".join(str(p) for p in content)
+        snippet = str(content).strip()[:60]
+        console.print(f"[green]ok[/green] ({elapsed_ms}ms, reply: {snippet!r})")
+        return
+
+    if preset.provider_adapter == "llm":
+        endpoint = LLMEndpoint(
+            provider="llm",
+            model=model,
+            base_url=None,
+            api_key=None,
+            source="cli",
+            adapter="llm",
         )
         console.print("\n[dim]Testing endpoint...[/dim]", end=" ")
         try:

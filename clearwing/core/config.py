@@ -194,6 +194,20 @@ class Config:
             out["task_models"] = self.config["task_models"]
         return out
 
+    def get_mcp_servers(self) -> dict[str, dict[str, Any]]:
+        """Return configured external MCP servers.
+
+        Shape:
+            mcp_servers:
+              desktop-commander:
+                command: desktop-commander
+                args: []
+        """
+        section = self.config.get("mcp_servers")
+        if not isinstance(section, dict):
+            return {}
+        return {str(name): dict(cfg) for name, cfg in section.items() if isinstance(cfg, dict)}
+
     def load(self, config_file: str) -> None:
         """Load configuration from a YAML file."""
         path = Path(config_file)
