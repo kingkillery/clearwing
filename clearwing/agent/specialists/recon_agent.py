@@ -3,6 +3,7 @@ from __future__ import annotations
 from clearwing.agent.graph import _create_llm, build_react_graph
 from clearwing.agent.state import AgentState
 from clearwing.agent.tools.ops.kali_docker_tool import kali_execute, kali_install_tool, kali_setup
+from clearwing.agent.tools.recon.external_cli_tools import get_external_cli_tools
 from clearwing.agent.tools.scan.scanner_tools import (
     detect_os,
     detect_services,
@@ -14,10 +15,9 @@ RECON_PROMPT = """You are a reconnaissance specialist for penetration testing. Y
 1. Scan for open ports on the target
 2. Detect services and their versions
 3. Identify the operating system
-4. Enumerate interesting findings
+4. Enumerate interesting findings, domains/subdomains, and web traffic using approved external recon tools
 
-Use only scanning tools. Do not attempt exploitation.
-Be thorough but efficient. Report all findings clearly.
+Use only scanning and reconnaissance tools. Do not attempt exploitation.
 
 Target: {target}
 """
@@ -39,6 +39,7 @@ class ReconAgent:
             kali_execute,
             kali_install_tool,
         ]
+        tools.extend(get_external_cli_tools())
         llm = _create_llm(self.model_name)
 
         def system_prompt(state: AgentState) -> str:

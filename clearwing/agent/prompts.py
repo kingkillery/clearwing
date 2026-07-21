@@ -27,6 +27,7 @@ Follow standard pentest methodology:
 - Explain your reasoning before taking action
 - **Hybrid Whitebox/Graybox Testing**: If you detect a custom web application or service and have access to the target's source code (e.g., via a local path or a git repository), use the `connect_mcp_server` tool to connect to a filesystem or GitHub MCP server. Use these tools to read the source code and identify potential vulnerabilities (like SQL injection, insecure direct object references, or hardcoded credentials) before or alongside active scanning.
 - **Source-code Vulnerability Hunting**: When you have access to a git repository or a local source tree (a github URL, an MCP filesystem, or a clone path), use the `hunt_source_code` tool to run the source-hunt pipeline — a file-parallel agent-driven hunter with a three-axis ranker (surface + influence + reachability), tiered budget (70/25/5 across A/B/C), independent-context verifier, and exploit-triage. It's the white-box companion to the network scanners. Use `hunt_source_code(repo_url, depth='quick')` for cheap static-only sweeps, or `depth='standard'` to spend a budget on LLM hunters. Use `list_sourcehunt_findings()` to recall results from earlier runs in the same session.
+- **External Recon Tooling**: For authorized internet-facing reconnaissance, use `amass_enum_domains` for OWASP Amass passive/approved active domain enumeration and `amass_list_subdomains` to read prior Amass results. Use `reaper_start_proxy`, `reaper_search_logs`, and `reaper_get_entry` for Ghost Security Reaper HTTPS proxy capture/inspection during web app testing. Use `raptor_scan_code` or `raptor_doctor` for safe RAPTOR static/code-security workflows against local source trees. Active Amass modes and starting Reaper require human approval.
 - **Weaponization Engine (Dynamic PoC Adaptation)**: If a target is vulnerable to a CVE and you find a PoC script (e.g., via `search_exploit_db`), you must:
     1.  Download the PoC to the Kali container working directory using `download_exploit`.
     2.  Review the code. If it has hardcoded values (like targets, ports, or shellcode), use the `create_custom_tool` or `kali_execute` (with `sed`, `awk`, or writing new files) to adapt it.
@@ -55,6 +56,7 @@ Follow standard pentest methodology:
 - Metasploit integration (requires approval)
 - Kali Linux Docker container for specialized tools (commands require approval)
 - Report generation (text, JSON, HTML, markdown)
+- External recon CLIs: OWASP Amass, Ghost Security Reaper, RAPTOR
 - Database queries for scan history
 - Runtime tool creation for custom workflows
 

@@ -59,6 +59,15 @@ def _get_mitm_tools() -> list[Any]:
         return []
 
 
+def _get_external_cli_tools() -> list[Any]:
+    try:
+        from .recon.external_cli_tools import get_external_cli_tools
+
+        return get_external_cli_tools()
+    except ImportError:
+        return []
+
+
 def _get_crypto_tools() -> list[Any]:
     try:
         from .crypto.srp_tools import get_srp_tools
@@ -236,6 +245,7 @@ def get_all_tools() -> list[Any]:
     tools.extend(_get_browser_tools())
     tools.extend(_get_proxy_tools())
     tools.extend(_get_webcrypto_tools())
+    tools.extend(_get_external_cli_tools())
     tools.extend(_get_auth_recorder_tools())
     tools.extend(_get_mitm_tools())
     tools.extend(_get_crypto_tools())

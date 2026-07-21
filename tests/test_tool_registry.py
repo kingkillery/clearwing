@@ -20,7 +20,7 @@ from clearwing.agent.tools import get_all_tools
 
 # Locked baseline as of Phase 4 start. Update this only when deliberately
 # adding or removing a tool from the network-agent registry.
-EXPECTED_TOOL_COUNT = 117
+EXPECTED_TOOL_COUNT = 125
 
 
 EXPECTED_TOOL_NAMES: frozenset[str] = frozenset(
@@ -42,6 +42,15 @@ EXPECTED_TOOL_NAMES: frozenset[str] = frozenset(
         "kali_execute",
         "kali_install_tool",
         "kali_cleanup",
+        # external_cli_tools
+        "amass_enum_domains",
+        "amass_list_subdomains",
+        "reaper_start_proxy",
+        "reaper_search_logs",
+        "reaper_get_entry",
+        "reaper_stop_proxy",
+        "raptor_scan_code",
+        "raptor_doctor",
         # reporting_tools
         "generate_report",
         "save_report",
