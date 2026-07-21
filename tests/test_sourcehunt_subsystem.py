@@ -300,7 +300,9 @@ def test_build_subsystem_hunter_agent_tools():
     hunter, ctx = build_subsystem_hunter_agent(
         subsystem=subsystem,
         repo_path="/tmp/repo",
-        sandbox=None,
+        # Mock sandbox: deep tools are only registered with a sandbox
+        # attached (None → static-only host fallback).
+        sandbox=MagicMock(),
         llm=mock_llm,
         session_id="test-session",
     )
@@ -322,7 +324,8 @@ def test_build_subsystem_hunter_agent_max_steps():
     hunter, ctx = build_subsystem_hunter_agent(
         subsystem=subsystem,
         repo_path="/tmp/repo",
-        sandbox=None,
+        # Mock sandbox keeps agent_mode="deep" (None → "constrained").
+        sandbox=MagicMock(),
         llm=mock_llm,
         session_id="test-session",
     )

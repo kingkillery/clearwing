@@ -23,6 +23,7 @@ from clearwing.agent.tools.hunt import (
     build_deep_agent_tools,
     build_hunter_tools,
     build_propagation_auditor_tools,
+    build_static_only_tools,
 )
 from clearwing.llm import AsyncLLMClient, ChatMessage, NativeToolSpec, ToolCall
 from clearwing.observability.telemetry import CostTracker
@@ -1035,6 +1036,21 @@ def _build_unconstrained_prompt(
     return prompt
 
 
+STATIC_ONLY_BLOCK = """
+IMPORTANT — STATIC-ONLY MODE: no sandbox container is available for this
+hunt (Docker unavailable). Compilation, execution, and fuzzing tools are
+NOT registered; calling them (execute, read_file, write_file,
+compile_file, run_with_sanitizer, write_test_case, fuzz_harness) returns
+an unknown-tool error and only wastes steps. Your available tools are:
+- read_source_file(path, start_line, end_line) — read repo files
+- list_source_tree(dir_path, max_depth) — list the repo tree
+- grep_source(pattern, path, file_glob) — regex search the repo
+- find_callers(symbol) — find references to a symbol
+- record_finding(...) — submit a vulnerability finding
+Analyze the source statically. Record findings with the strongest static
+evidence you can gather, and note in the description that dynamic
+validation was unavailable (no sandbox)."""
+
 SEED_TRANSCRIPT_BLOCK = """
 A previous investigation of this file found the following:
 {transcript}
@@ -1182,7 +1198,8 @@ def build_subsystem_hunter_agent(
 ) -> tuple[NativeHunter, HunterContext]:
     """Build a subsystem-level hunter agent (spec 006).
 
-    Always uses deep agent mode with a generous step budget.
+    Always uses deep agent mode with a generous step budget. Without a
+    sandbox container it downgrades to the static-only tool set.
     """
     ctx = HunterContext(
         repo_path=repo_path,
@@ -1194,13 +1211,17 @@ def build_subsystem_hunter_agent(
         findings_pool=findings_pool,
     )
 
-    tools = build_deep_agent_tools(ctx)
+    host_static_only = sandbox is None
+    tools = build_static_only_tools(ctx) if host_static_only else build_deep_agent_tools(ctx)
     prompt = _build_subsystem_prompt(
         subsystem,
         project_name,
         findings_pool=findings_pool,
         callgraph=callgraph,
     )
+
+    if host_static_only:
+        prompt += "\n" + STATIC_ONLY_BLOCK
 
     if campaign_hint:
         prompt += "\n" + CAMPAIGN_HINT_TEMPLATE.format(objective=campaign_hint)
@@ -1211,7 +1232,7 @@ def build_subsystem_hunter_agent(
         tools=tools,
         ctx=ctx,
         max_steps=2000,
-        agent_mode="deep",
+        agent_mode="constrained" if host_static_only else "deep",
         budget_usd=budget_usd,
         initial_user_message=(
             f"Hunt for cross-file vulnerabilities in the {subsystem.name} "
@@ -1461,7 +1482,11 @@ class NativeHunter:
     ) -> Any:
         tool = tools_by_name.get(tool_call.fn_name)
         if tool is None:
-            return {"error": f"unknown tool: {tool_call.fn_name}"}
+            # Hallucinated names (e.g. sandbox tools in host static-only
+            # mode) — tell the model what it CAN call so it recovers
+            # instead of retrying the same dead name.
+            available = ", ".join(sorted(tools_by_name))
+            return {"error": f"unknown tool: {tool_call.fn_name}. Available tools: {available}"}
         started = time.monotonic()
         try:
             arguments = tool_call.fn_arguments
@@ -1657,6 +1682,13 @@ def build_hunter_agent(
         findings_pool=findings_pool,
     )
 
+    # Host fallback: without a sandbox container, sandbox-backed tools
+    # (execute/read_file/write_file/compile_file/run_with_sanitizer/
+    # write_test_case/fuzz_harness) only return "no sandbox available"
+    # while burning steps. Downgrade every non-propagation hunter to the
+    # static-only tool set; propagation is already discovery+reporting.
+    host_static_only = sandbox is None
+
     if specialist == "propagation":
         tools = build_propagation_auditor_tools(ctx)
         prompt = _build_propagation_prompt(file_target)
@@ -1675,27 +1707,61 @@ def build_hunter_agent(
             findings_pool=findings_pool,
         )
         if agent_mode == "deep":
-            tools = build_deep_agent_tools(ctx)
+            tools = build_static_only_tools(ctx) if host_static_only else build_deep_agent_tools(ctx)
             max_steps = 500
         else:
-            tools = build_hunter_tools(ctx)
+            tools = build_static_only_tools(ctx) if host_static_only else build_hunter_tools(ctx)
             max_steps = 20
     elif agent_mode == "deep":
-        tools = build_deep_agent_tools(ctx)
+        tools = build_static_only_tools(ctx) if host_static_only else build_deep_agent_tools(ctx)
         combined_hints = list(semgrep_hints or [])
-        prompt = _build_deep_agent_prompt(
-            file_target,
-            project_name,
-            seeded_crash,
-            combined_hints,
-            specialist=specialist,
-            entry_point=entry_point,
-            seed_context=seed_context,
-            findings_pool=findings_pool,
-        )
+        if host_static_only:
+            # DEEP_AGENT_PROMPT opens with "full shell access" and names
+            # execute/read_file/write_file as available tools — false
+            # claims in host mode that invite exactly the retry loop this
+            # fallback exists to prevent. Use the static prompt instead;
+            # STATIC_ONLY_BLOCK (appended below) explicitly overrides its
+            # compile/run mentions.
+            if specialist == "memory_safety":
+                combined_hints = _memory_safety_heuristic_hints(repo_path, file_target) + combined_hints
+            prompt = _build_hunter_prompt(
+                file_target,
+                project_name,
+                seeded_crash,
+                combined_hints,
+                specialist=specialist,
+            )
+            # _build_hunter_prompt has no entry-point/seed/pool blocks —
+            # re-append them so the downgrade doesn't lose hunt targeting
+            # or cross-agent context.
+            if entry_point is not None:
+                prompt += "\n" + ENTRY_POINT_FOCUS.format(
+                    entry_point=entry_point.function_name,
+                    file_path=file_target.get("path", "unknown"),
+                    start_line=entry_point.start_line,
+                    end_line=entry_point.end_line,
+                    entry_type=entry_point.entry_type,
+                )
+            if seed_context:
+                prompt += "\n" + SEED_CORPUS_BLOCK.format(seed_context=seed_context)
+            if findings_pool is not None:
+                count = len(findings_pool.all_findings())
+                if count > 0:
+                    prompt += "\n" + POOL_ACCESS_BLOCK.format(count=count)
+        else:
+            prompt = _build_deep_agent_prompt(
+                file_target,
+                project_name,
+                seeded_crash,
+                combined_hints,
+                specialist=specialist,
+                entry_point=entry_point,
+                seed_context=seed_context,
+                findings_pool=findings_pool,
+            )
         max_steps = 500
     else:
-        tools = build_hunter_tools(ctx)
+        tools = build_static_only_tools(ctx) if host_static_only else build_hunter_tools(ctx)
         combined_hints = list(semgrep_hints or [])
         if specialist == "memory_safety":
             combined_hints = _memory_safety_heuristic_hints(repo_path, file_target) + combined_hints
@@ -1708,6 +1774,9 @@ def build_hunter_agent(
         )
         max_steps = 20
 
+    if host_static_only and specialist != "propagation":
+        prompt += "\n" + STATIC_ONLY_BLOCK
+
     if seed_transcript:
         prompt += "\n\n" + SEED_TRANSCRIPT_BLOCK.format(transcript=seed_transcript)
 
@@ -1717,6 +1786,7 @@ def build_hunter_agent(
         tools=tools,
         ctx=ctx,
         max_steps=max_steps,
-        agent_mode=agent_mode,
+        # Downgraded hunters get the constrained repeat-throttle.
+        agent_mode="constrained" if host_static_only else agent_mode,
         budget_usd=budget_usd,
     ), ctx

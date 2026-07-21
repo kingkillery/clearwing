@@ -129,7 +129,8 @@ class TestBuildHunterAgentPromptMode:
         hunter, ctx = build_hunter_agent(
             file_target=ft,
             repo_path="/tmp/repo",
-            sandbox=None,
+            # Mock sandbox: deep tools require one (None → static-only).
+            sandbox=MagicMock(),
             llm=llm,
             session_id="s1",
             agent_mode="deep",
@@ -148,7 +149,8 @@ class TestBuildHunterAgentPromptMode:
         hunter, ctx = build_hunter_agent(
             file_target=ft,
             repo_path="/tmp/repo",
-            sandbox=None,
+            # Mock sandbox: compile/run tools require one (None → static-only).
+            sandbox=MagicMock(),
             llm=llm,
             session_id="s1",
             agent_mode="constrained",
@@ -184,7 +186,9 @@ class TestBuildHunterAgentPromptMode:
         hunter, ctx = build_hunter_agent(
             file_target=ft,
             repo_path="/tmp/repo",
-            sandbox=None,
+            # Mock sandbox keeps the deep specialist prompt (None downgrades
+            # to the static constrained prompt).
+            sandbox=MagicMock(),
             llm=llm,
             session_id="s1",
             agent_mode="deep",

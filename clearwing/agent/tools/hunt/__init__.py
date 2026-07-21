@@ -80,12 +80,34 @@ def build_propagation_auditor_tools(ctx: HunterContext) -> list:
     return tools
 
 
+def build_static_only_tools(ctx: HunterContext) -> list:
+    """Host-fallback tool set for hunts with no sandbox container.
+
+    When Docker is unavailable the pool falls back to host mode
+    (``ctx.sandbox is None``). The sandbox-backed tools (execute,
+    read_file, write_file, compile_file, run_with_sanitizer,
+    write_test_case, fuzz_harness) would only return
+    ``"no sandbox available"`` while burning hunter steps, so this set
+    registers just the host-capable tools: discovery (read_source_file,
+    list_source_tree, grep_source, find_callers) + record_finding
+    (+ findings-pool query when a pool is attached).
+    """
+    tools = [
+        *build_discovery_tools(ctx),
+        *build_reporting_tools(ctx),
+    ]
+    if ctx.findings_pool is not None:
+        tools.extend(build_pool_query_tools(ctx))
+    return tools
+
+
 __all__ = [
     # Public API
     "HunterContext",
     "build_deep_agent_tools",
     "build_hunter_tools",
     "build_propagation_auditor_tools",
+    "build_static_only_tools",
     # Per-domain builders (for callers that want a narrower tool set)
     "build_discovery_tools",
     "build_analysis_tools",

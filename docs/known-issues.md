@@ -5,24 +5,30 @@ on this repo; this file is the tracker.)
 
 ## Open
 
-### 1. Host-mode hunters can get stuck on sandbox-only tool calls
-
-**Observed:** with Docker unavailable, `HunterSandbox` falls back to host
-mode, but at least one hunter (`src/types.ts`, session `sh-70f0d515`)
-burned its steps on `read_file`/`execute` calls that all returned
-`"no sandbox available"` — it never read the file and ended by trying to
-record an `analysis_blocked` finding (which was itself dropped, see
-Fixed below). Other hunters in the same session read files fine, so the
-degradation is inconsistent — likely tool-name mismatch (hallucinated
-`read_file`/`execute` vs. the actual host-fallback tools
-`read_source_file`/`grep_source`) or a context that never got host
-tools.
-
-**Impact:** hunts without Docker can silently degrade file coverage.
-**Until fixed:** start Docker for sanitizer-backed containers, or treat
-sandbox-less runs as reduced-confidence.
+(none)
 
 ## Fixed
+
+### Host-mode hunters can get stuck on sandbox-only tool calls
+
+**Fixed in this change.** When `sandbox is None` (Docker unavailable),
+`build_hunter_agent` and `build_subsystem_hunter_agent` now register the
+static-only tool set (`build_static_only_tools`: read_source_file,
+list_source_tree, grep_source, find_callers, record_finding [+ pool
+query]) instead of sandbox-backed tools that only returned
+`"no sandbox available"`. Effective `NativeHunter.agent_mode` becomes
+`"constrained"` so repeat-throttling applies; branch step limits are
+unchanged. Specialist deep-mode hunts no longer get the
+"full shell access" deep prompt — they get the static prompt plus
+`STATIC_ONLY_BLOCK` naming exactly the tools available, with
+entry-point/seed/pool context blocks preserved. Unknown-tool errors now
+list the registered tool names so a hallucinated call recovers in one
+step instead of looping.
+
+**Tests:** `tests/test_host_static_fallback.py` (12 tests: both agent
+modes, subsystem hunter, propagation unchanged, prompt claims absent,
+entry-point context preserved, unknown-tool recovery). Existing tests
+that asserted sandbox tools with `sandbox=None` now pass a mock sandbox.
 
 ### Sourcehunt budget cap is not enforced globally
 

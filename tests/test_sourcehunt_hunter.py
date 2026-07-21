@@ -343,7 +343,9 @@ class TestBuildHunterAgent:
         hunter, ctx = build_hunter_agent(
             file_target=ft,
             repo_path=str(FIXTURE_C_PROPAGATION),
-            sandbox=None,
+            # Mock sandbox: the full 9-tool set is only registered when a
+            # sandbox is attached (None → static-only host fallback).
+            sandbox=MagicMock(),
             llm=llm,
             session_id="test-session",
             prompt_mode="specialist",
