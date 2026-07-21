@@ -45,8 +45,13 @@ class TestSessionEndpoints:
         mock_session.model = "claude-sonnet-4-6"
         mock_session.status = "completed"
         mock_session.start_time = "2024-01-01T00:00:00"
+        mock_session.end_time = None
         mock_session.cost_usd = 0.05
         mock_session.token_count = 1000
+        mock_session.flags_found = []
+        mock_session.open_ports = []
+        mock_session.services = []
+        mock_session.vulnerabilities = []
 
         with patch("clearwing.data.memory.SessionStore") as mock_store:
             mock_store.return_value.list_sessions.return_value = [mock_session]
@@ -64,6 +69,7 @@ class TestSessionEndpoints:
         mock_session.model = "claude-sonnet-4-6"
         mock_session.status = "completed"
         mock_session.start_time = "2024-01-01T00:00:00"
+        mock_session.end_time = None
         mock_session.cost_usd = 0.05
         mock_session.token_count = 1000
         mock_session.open_ports = [{"port": 22}]
@@ -104,6 +110,18 @@ class TestMetricsEndpoints:
     def test_prometheus_metrics(self, client):
         resp = client.get("/api/metrics/prometheus")
         assert resp.status_code == 200
+
+
+class TestKanbanEndpoints:
+    def test_kanban_allows_local_origin(self, client):
+        with patch("clearwing.ui.web.app.os.environ", {}):
+            resp = client.get("/api/kanban", headers={"origin": "http://127.0.0.1:8899"})
+        assert resp.status_code == 200
+        assert resp.json()["count"] == 0
+
+    def test_kanban_rejects_cross_origin(self, client):
+        resp = client.get("/api/kanban", headers={"origin": "https://evil.example"})
+        assert resp.status_code == 403
 
 
 class TestOperateEndpoints:

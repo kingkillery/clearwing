@@ -22,7 +22,12 @@ def _connect_configured_mcp_servers() -> None:
             continue
         raw_args = cfg.get("args", [])
         args = [str(arg) for arg in raw_args] if isinstance(raw_args, list) else []
-        result = connect_mcp_server.invoke({"name": name, "command": command, "args": args})
+        # Call the AgentTool (__call__ → sync func) instead of .invoke():
+        # .invoke() returns an unawaited coroutine when called from async
+        # contexts (WebUI/operator startup), so MCP servers silently never
+        # connected there. connect_mcp_server is synchronous; __call__
+        # runs it directly in both sync and async callers.
+        result = connect_mcp_server(name=name, command=command, args=args)
         if isinstance(result, dict) and result.get("status") == "error":
             # Do not fail agent startup on an optional external MCP server.
             continue

@@ -3,14 +3,15 @@
 import asyncio
 import json
 import logging
+import os
+import sqlite3
 import uuid
+from pathlib import Path
 from typing import Any
 
-from pathlib import Path
-
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import clearwing.data.memory as memory_data
@@ -22,6 +23,14 @@ from clearwing.core.events import EventBus, EventType
 from clearwing.observability import MetricsCollector
 
 logger = logging.getLogger(__name__)
+_DEFAULT_ALLOWED_ORIGINS = (
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:8899",
+    "http://127.0.0.1:8900",
+    "http://localhost:8000",
+    "http://localhost:8899",
+    "http://localhost:8900",
+)
 
 
 def _make_session_store():
@@ -34,6 +43,14 @@ def _make_cost_tracker():
 
 def create_app():
     """Create and configure the FastAPI application."""
+    allowed_origins = [
+        origin.strip()
+        for origin in os.environ.get(
+            "CLEARWING_WEB_ALLOWED_ORIGINS",
+            ",".join(_DEFAULT_ALLOWED_ORIGINS),
+        ).split(",")
+        if origin.strip()
+    ]
     app = FastAPI(
         title="Clearwing API",
         description="REST and WebSocket API for the Clearwing penetration testing agent",
@@ -42,7 +59,7 @@ def create_app():
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -59,6 +76,21 @@ def create_app():
 
     # In-memory session registry
     _sessions: dict[str, dict[str, Any]] = {}
+
+    def _format_time(value: Any) -> str | None:
+        if not value:
+            return None
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
+
+    def _require_local_ui_request(request: Request) -> None:
+        origin = request.headers.get("origin")
+        if not origin:
+            return
+        if origin in allowed_origins:
+            return
+        raise HTTPException(status_code=403, detail="Origin not allowed")
 
     # ---------------------------------------------------------------
     # REST endpoints
@@ -79,9 +111,14 @@ def create_app():
                 "target": s.target,
                 "model": s.model,
                 "status": s.status,
-                "start_time": str(s.start_time),
+                "start_time": _format_time(getattr(s, "start_time", None)),
+                "end_time": _format_time(getattr(s, "end_time", None)),
                 "cost_usd": s.cost_usd,
                 "token_count": s.token_count,
+                "flags_found": len(s.flags_found),
+                "open_ports": len(s.open_ports),
+                "services": len(s.services),
+                "vulnerabilities": len(s.vulnerabilities),
             }
             for s in sessions
         ]
@@ -101,7 +138,8 @@ def create_app():
             "target": session.target,
             "model": session.model,
             "status": session.status,
-            "start_time": str(session.start_time),
+            "start_time": _format_time(getattr(session, "start_time", None)),
+            "end_time": _format_time(getattr(session, "end_time", None)),
             "cost_usd": session.cost_usd,
             "token_count": session.token_count,
             "open_ports": session.open_ports,
@@ -127,10 +165,95 @@ def create_app():
     async def get_prometheus_metrics():
         """Get metrics in Prometheus exposition format."""
         collector = MetricsCollector()
-        return JSONResponse(
+        return Response(
             content=collector.format_prometheus(),
             media_type="text/plain",
         )
+
+    @app.get("/api/kanban")
+    async def get_kanban(request: Request):
+        """Return local agtx kanban tasks for this Clearwing workspace."""
+        _require_local_ui_request(request)
+        tasks_by_id = _load_agtx_tasks()
+        columns = ["backlog", "planning", "running", "review", "done", "blocked"]
+        grouped = {status: [] for status in columns}
+        for task in sorted(tasks_by_id.values(), key=lambda t: (str(t.get("status")), str(t.get("title")))):
+            status = str(task.get("status") or "backlog").lower()
+            if status not in grouped:
+                status = "backlog"
+            grouped[status].append(task)
+        return {"columns": grouped, "count": len(tasks_by_id)}
+
+    @app.get("/api/kanban/{task_id}")
+    async def get_kanban_task(task_id: str, request: Request):
+        """Return full local agtx task detail plus nearby artifacts."""
+        _require_local_ui_request(request)
+        tasks = _load_agtx_tasks()
+        task = tasks.get(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        return {
+            "task": task,
+            "artifacts": _task_artifacts(task_id),
+        }
+
+    def _load_agtx_tasks() -> dict[str, dict[str, Any]]:
+        tasks_by_id: dict[str, dict[str, Any]] = {}
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            projects_dir = Path(appdata) / "agtx" / "config" / "projects"
+            for db_path in projects_dir.glob("*.db") if projects_dir.exists() else []:
+                try:
+                    conn = sqlite3.connect(db_path)
+                    conn.row_factory = sqlite3.Row
+                    rows = conn.execute(
+                        """
+                        SELECT id, title, description, status, agent, project_id,
+                               session_name, worktree_path, branch_name, plugin,
+                               updated_at, created_at
+                        FROM tasks
+                        WHERE project_id = 'clearwing'
+                           OR id LIKE 'clearwing-%'
+                           OR id LIKE 'duckdice-%'
+                        """
+                    ).fetchall()
+                    conn.close()
+                except sqlite3.Error:
+                    continue
+                for row in rows:
+                    task = dict(row)
+                    current = tasks_by_id.get(task["id"])
+                    if not current or str(task.get("updated_at") or "") > str(current.get("updated_at") or ""):
+                        task["source_db"] = db_path.name
+                        tasks_by_id[task["id"]] = task
+        return tasks_by_id
+
+    def _task_artifacts(task_id: str) -> list[dict[str, str]]:
+        root = Path.cwd()
+        candidates: list[Path] = []
+        if task_id == "duckdice-passive-recon":
+            candidates.extend((root / "results" / "duckdice-passive").glob("*"))
+        elif task_id.startswith("clearwing") or task_id in {
+            "clearwing-webui",
+            "clearwing-provider",
+            "clearwing-ui-redesign",
+        }:
+            candidates.extend((root / "results" / "swarm-discovery").glob("*.out.txt"))
+            candidates.extend((root / "results" / "swarm-discovery").glob("*.log"))
+        artifacts: list[dict[str, str]] = []
+        for path in sorted(candidates, key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)[:8]:
+            if path.is_dir():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            artifacts.append({
+                "name": path.name,
+                "path": str(path),
+                "content": text[-5000:],
+            })
+        return artifacts
 
     @app.post("/api/operate")
     async def start_operator(request_body: dict):

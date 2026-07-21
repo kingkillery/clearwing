@@ -3,312 +3,1255 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Clearwing</title>
+<title>Clearwing Operator</title>
 <style>
   :root {
-    --bg: #0d1117; --surface: #161b22; --border: #30363d;
-    --text: #c9d1d9; --dim: #8b949e; --accent: #58a6ff;
-    --green: #3fb950; --red: #f85149; --yellow: #d29922; --purple: #bc8cff;
+    --bg: #111315;
+    --panel: #181b1e;
+    --panel-2: #20252a;
+    --line: #343a40;
+    --text: #f0f3f5;
+    --muted: #9ca7b0;
+    --soft: #c7d0d8;
+    --blue: #4aa3ff;
+    --green: #44c278;
+    --amber: #e0ad3e;
+    --red: #ef5f5f;
+    --violet: #aa8dff;
+    --cyan: #37c8c8;
+    --shadow: 0 16px 50px rgba(0, 0, 0, .28);
   }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
-         background: var(--bg); color: var(--text); height: 100vh;
-         display: flex; flex-direction: column; }
-  header { background: var(--surface); border-bottom: 1px solid var(--border);
-           padding: 12px 20px; display: flex; align-items: center; gap: 16px; }
-  header h1 { font-size: 16px; color: var(--accent); font-weight: 600; }
-  header .status { font-size: 12px; color: var(--dim); }
-  header .status.connected { color: var(--green); }
 
-  #setup { padding: 20px; max-width: 500px; margin: 40px auto; }
-  #setup label { display: block; color: var(--dim); font-size: 12px;
-                 margin-top: 12px; margin-bottom: 4px; }
-  #setup input { width: 100%; padding: 8px 12px; background: var(--surface);
-                 border: 1px solid var(--border); border-radius: 6px;
-                 color: var(--text); font-size: 14px; }
-  #setup button { margin-top: 20px; width: 100%; padding: 10px;
-                  background: var(--accent); color: #fff; border: none;
-                  border-radius: 6px; font-size: 14px; cursor: pointer; }
-  #setup button:hover { opacity: 0.9; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    color: var(--text);
+    background: var(--bg);
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    letter-spacing: 0;
+    overflow: hidden;
+  }
 
-  #chat { flex: 1; display: none; flex-direction: column; overflow: hidden; }
-  #messages { flex: 1; overflow-y: auto; padding: 16px 20px; }
-  .msg { margin-bottom: 12px; padding: 10px 14px; border-radius: 8px;
-         max-width: 85%; white-space: pre-wrap; word-wrap: break-word;
-         font-size: 13px; line-height: 1.5; }
-  .msg.user { background: #1f3a5f; margin-left: auto; }
-  .msg.agent { background: var(--surface); border: 1px solid var(--border); }
-  .msg.tool { background: #1a1e24; border-left: 3px solid var(--accent);
-              font-size: 12px; color: var(--dim); }
-  .msg.error { background: #2d1215; border: 1px solid var(--red); color: var(--red); }
-  .msg.flag { background: #2a1a2e; border: 1px solid var(--purple);
-              color: var(--purple); font-weight: bold; }
-  .msg.approval { background: #2a2000; border: 1px solid var(--yellow); }
-  .msg.approval button { margin: 8px 8px 0 0; padding: 4px 16px;
-                         border-radius: 4px; border: 1px solid; cursor: pointer;
-                         font-size: 12px; background: transparent; }
-  .msg.approval .approve { color: var(--green); border-color: var(--green); }
-  .msg.approval .deny { color: var(--red); border-color: var(--red); }
-  .msg .label { font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+  button, input, textarea, select { font: inherit; }
+  button {
+    border: 1px solid var(--line);
+    color: var(--text);
+    background: var(--panel-2);
+    border-radius: 6px;
+    min-height: 36px;
+    padding: 0 12px;
+    cursor: pointer;
+  }
+  button:hover { border-color: #59636c; background: #252b31; }
+  button.primary { background: var(--blue); border-color: var(--blue); color: #071018; font-weight: 700; }
+  button.danger { border-color: #704048; color: #ffb0b8; }
+  button:disabled { cursor: not-allowed; opacity: .55; }
+  input, textarea, select {
+    width: 100%;
+    color: var(--text);
+    background: #0f1113;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 10px 11px;
+    outline: none;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(74, 163, 255, .16); }
+  textarea { min-height: 108px; resize: vertical; line-height: 1.45; }
+  label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; }
 
-  #input-bar { border-top: 1px solid var(--border); padding: 12px 20px;
-               display: flex; gap: 10px; background: var(--surface); }
-  #input-bar input { flex: 1; padding: 10px 14px; background: var(--bg);
-                     border: 1px solid var(--border); border-radius: 6px;
-                     color: var(--text); font-size: 14px; }
-  #input-bar button { padding: 10px 20px; background: var(--accent); color: #fff;
-                      border: none; border-radius: 6px; cursor: pointer; }
+  .app {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
 
-  footer { background: var(--surface); border-top: 1px solid var(--border);
-           padding: 6px 20px; font-size: 11px; color: var(--dim);
-           display: flex; gap: 20px; }
+  .topbar {
+    height: 56px;
+    border-bottom: 1px solid var(--line);
+    background: #15181b;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0 18px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    color: #081015;
+    background: var(--green);
+    font-weight: 900;
+  }
+  h1 { margin: 0; font-size: 16px; line-height: 1.1; }
+  .subtitle { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .top-actions { display: flex; align-items: center; gap: 10px; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--soft);
+    background: #101214;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red); }
+  .dot.ok { background: var(--green); }
+  .dot.warn { background: var(--amber); }
 
-  #ops-panel { display: none; background: var(--surface);
-               border-bottom: 1px solid var(--border); padding: 8px 20px;
-               font-size: 12px; color: var(--dim); }
-  #ops-panel.active { display: block; }
-  #ops-panel .op-line { margin: 2px 0; font-family: monospace; }
-  #ops-panel .op-label { color: var(--accent); font-weight: 600; }
-  .msg.validation { background: #1a1e24; border-left: 3px solid var(--purple);
-                    font-size: 12px; }
-  .msg.progress { background: #1a1e24; border-left: 3px solid var(--green);
-                  font-size: 12px; color: var(--dim); }
+  .workspace {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(320px, 390px) 1fr;
+    overflow: hidden;
+  }
+  .sidebar {
+    min-height: 0;
+    border-right: 1px solid var(--line);
+    background: #141719;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .section {
+    padding: 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .section-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--soft);
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .form-grid { display: grid; gap: 10px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hint { color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .metric {
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 7px;
+    padding: 9px;
+    min-width: 0;
+  }
+  .metric span { display: block; color: var(--muted); font-size: 11px; }
+  .metric strong { display: block; margin-top: 4px; font-size: 16px; overflow-wrap: anywhere; }
+
+  .board-shell {
+    min-height: 0;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line);
+    background: #111416;
+    overflow: auto;
+  }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(170px, 1fr));
+    gap: 10px;
+    min-width: 920px;
+    align-items: stretch;
+  }
+  .lane {
+    height: clamp(190px, 30vh, 340px);
+    min-height: 0;
+    border: 1px solid var(--line);
+    background: #15181b;
+    border-radius: 7px;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: 34px minmax(0, 1fr);
+  }
+  .lane header {
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--line);
+    background: #1b2025;
+  }
+  .lane h2 { margin: 0; font-size: 12px; text-transform: uppercase; color: var(--soft); }
+  .count { color: var(--muted); font-size: 12px; }
+  .cards {
+    min-height: 0;
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    padding: 8px;
+    overflow-y: auto;
+  }
+  .card {
+    width: 100%;
+    text-align: left;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 7px;
+    padding: 9px;
+    min-height: 70px;
+    height: auto;
+  }
+  .card strong { display: block; font-size: 13px; margin-bottom: 5px; }
+  .card p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.38;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .card:hover { border-color: var(--blue); }
+  .tagrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .tag { color: var(--soft); background: #101214; border: 1px solid var(--line); border-radius: 999px; padding: 3px 7px; font-size: 11px; }
+  .tag.blue { border-color: rgba(74, 163, 255, .5); color: #a9d5ff; }
+  .tag.green { border-color: rgba(68, 194, 120, .5); color: #a9efc7; }
+  .tag.amber { border-color: rgba(224, 173, 62, .5); color: #f5d690; }
+  .tag.violet { border-color: rgba(170, 141, 255, .5); color: #cfc1ff; }
+
+  .main {
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    overflow: hidden;
+  }
+  .main-head {
+    border-bottom: 1px solid var(--line);
+    padding: 14px 16px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 14px;
+    align-items: start;
+  }
+  .run-title { margin: 0; font-size: 18px; }
+  .run-meta { margin-top: 5px; color: var(--muted); font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 6px; }
+  .tab { min-height: 32px; padding: 0 10px; }
+  .tab.active { border-color: var(--blue); color: #b8ddff; }
+
+  .content {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    overflow: hidden;
+  }
+  .stream {
+    min-height: 0;
+    overflow: auto;
+    padding: 14px 16px 28px;
+  }
+  .event {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr);
+    gap: 10px;
+    padding: 11px 0;
+    border-bottom: 1px solid rgba(52, 58, 64, .65);
+  }
+  .event time { color: var(--muted); font-size: 12px; }
+  .event h3 { margin: 0 0 4px; font-size: 13px; }
+  .event p { margin: 0; color: var(--soft); font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .event.error h3 { color: #ff9a9a; }
+  .event.tool h3 { color: #a9d5ff; }
+  .event.approval h3 { color: #f5d690; }
+  .event.flag h3 { color: #cfc1ff; }
+
+  .inspector {
+    min-height: 0;
+    border-left: 1px solid var(--line);
+    background: #141719;
+    overflow: auto;
+  }
+  .approval-box {
+    border: 1px solid rgba(224, 173, 62, .55);
+    background: rgba(224, 173, 62, .09);
+    border-radius: 7px;
+    padding: 10px;
+    display: grid;
+    gap: 9px;
+  }
+  .approval-box p { margin: 0; color: var(--soft); font-size: 13px; line-height: 1.42; }
+  .approval-actions { display: flex; gap: 8px; }
+  .approval-actions button { flex: 1; }
+  .kv { display: grid; gap: 7px; font-size: 13px; }
+  .kv div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid rgba(52,58,64,.55); padding-bottom: 7px; }
+  .kv span { color: var(--muted); }
+  .kv strong { text-align: right; overflow-wrap: anywhere; }
+  .session-list { display: grid; gap: 8px; }
+  .session-row {
+    width: 100%;
+    height: auto;
+    min-height: 58px;
+    display: grid;
+    gap: 4px;
+    text-align: left;
+    padding: 9px;
+    border-radius: 7px;
+  }
+  .session-row strong { font-size: 13px; }
+  .session-row span { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .session-detail {
+    white-space: pre-wrap;
+    color: var(--soft);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .review-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: minmax(320px, 720px);
+    justify-content: end;
+    background: rgba(0, 0, 0, .55);
+  }
+  .review-panel {
+    min-height: 0;
+    background: #121518;
+    border-left: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    display: grid;
+    grid-template-rows: auto 1fr;
+  }
+  .review-head {
+    padding: 16px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    justify-content: space-between;
+    align-items: start;
+    gap: 12px;
+  }
+  .review-head h2 { margin: 0; font-size: 18px; }
+  .review-body {
+    min-height: 0;
+    overflow: auto;
+    padding: 16px;
+    display: grid;
+    gap: 14px;
+  }
+  .review-block {
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--panel);
+    padding: 12px;
+  }
+  .review-block h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; color: var(--soft); }
+  .review-block pre {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--soft);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .review-actions {
+    display: grid;
+    gap: 10px;
+  }
+  .review-decision {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--soft);
+    font-size: 12px;
+  }
+  .review-decision strong { color: var(--text); }
+  .review-action-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .review-thread {
+    display: grid;
+    gap: 8px;
+  }
+  .review-comment {
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #101214;
+    padding: 9px;
+  }
+  .review-comment header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 6px;
+  }
+  .review-comment p {
+    margin: 0;
+    color: var(--soft);
+    font-size: 12px;
+    line-height: 1.42;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+  .review-composer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: end;
+  }
+  .review-composer textarea { min-height: 78px; }
+
+  .composer {
+    border-top: 1px solid var(--line);
+    background: #15181b;
+    padding: 12px 16px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+  }
+  .composer input { min-height: 40px; }
+
+  .hide { display: none !important; }
+
+  @media (max-width: 1080px) {
+    .workspace {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .sidebar { border-right: 0; border-bottom: 1px solid var(--line); max-height: 58dvh; overflow: auto; }
+    .content { grid-template-columns: 1fr; }
+    .inspector { border-left: 0; border-top: 1px solid var(--line); max-height: 360px; }
+  }
+  @media (max-width: 680px) {
+    .topbar { height: auto; padding: 12px; align-items: flex-start; flex-direction: column; }
+    .top-actions { width: 100%; flex-wrap: wrap; }
+    .main-head { grid-template-columns: 1fr; }
+    .two, .metrics { grid-template-columns: 1fr; }
+    .event { grid-template-columns: 1fr; gap: 4px; }
+    .composer { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
+<div class="app">
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">C</div>
+      <div>
+        <h1>Clearwing Operator</h1>
+        <div class="subtitle">Agent runs, approvals, and agtx-style lanes</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span class="pill"><span id="health-dot" class="dot warn"></span><span id="health-text">Checking API</span></span>
+      <span class="pill" id="socket-pill"><span id="socket-dot" class="dot"></span><span id="socket-text">Socket idle</span></span>
+      <button id="refresh-btn" type="button">Refresh</button>
+    </div>
+  </div>
 
-<header>
-  <h1>Clearwing</h1>
-  <span id="conn-status" class="status">Disconnected</span>
-  <span id="session-info" class="status"></span>
-</header>
+  <div class="workspace">
+    <aside class="sidebar">
+      <section class="section">
+        <div class="section-title"><span>Launch Run</span><span id="session-id">No session</span></div>
+        <div class="form-grid">
+          <label>Target
+            <input id="target" placeholder="10.0.0.1, host, CIDR, or repo path">
+          </label>
+          <label>Goals
+            <textarea id="goals" placeholder="One goal per line. Keep authorization and scope explicit."></textarea>
+          </label>
+          <div class="two">
+            <label>Model
+              <input id="model" value="qwen3.7-plus">
+            </label>
+            <label>Max Turns
+              <input id="max-turns" type="number" min="1" value="50">
+            </label>
+          </div>
+          <label>Base URL
+            <input id="base-url" value="http://localhost:20128/v1">
+          </label>
+          <label>API Key
+            <input id="api-key" type="password" placeholder="Use saved Clearwing config if blank">
+          </label>
+          <div class="two">
+            <button id="start-btn" class="primary" type="button">Connect</button>
+            <button id="disconnect-btn" type="button" disabled>Disconnect</button>
+          </div>
+          <button id="operate-btn" type="button">Run Operator</button>
+          <div class="hint">Connect opens an interactive WebSocket session. Run Operator starts the autonomous `/api/operate` workflow with the goals above.</div>
+        </div>
+      </section>
 
-<div id="setup">
-  <h2 style="color:var(--text);margin-bottom:8px;">Start Session</h2>
-  <label>Target (IP / hostname / CIDR)</label>
-  <input id="target" placeholder="e.g. 192.168.1.0/24">
-  <label>Model</label>
-  <input id="model" placeholder="e.g. claude-sonnet-4-6">
-  <label>Base URL</label>
-  <input id="base-url" placeholder="https://api.minimax.io/v1">
-  <label>API Key</label>
-  <input id="api-key" type="password" placeholder="sk-...">
-  <button onclick="startSession()">Connect</button>
-</div>
+      <section class="section">
+        <div class="section-title"><span>Run Metrics</span><span id="last-update">Live</span></div>
+        <div class="metrics">
+          <div class="metric"><span>Cost</span><strong id="cost">$0.0000</strong></div>
+          <div class="metric"><span>Tokens</span><strong id="tokens">0</strong></div>
+          <div class="metric"><span>Events</span><strong id="event-count">0</strong></div>
+        </div>
+      </section>
+    </aside>
 
-<div id="ops-panel"></div>
+    <main class="main">
+      <div class="main-head">
+        <div>
+          <h2 class="run-title" id="run-title">No active run</h2>
+          <div class="run-meta">
+            <span id="run-target">Target not set</span>
+            <span id="run-model">Model qwen3.7-plus</span>
+            <span id="run-provider">http://localhost:20128/v1</span>
+          </div>
+        </div>
+        <div class="tabs">
+          <button class="tab active" type="button" data-filter="all">All</button>
+          <button class="tab" type="button" data-filter="tool">Tools</button>
+          <button class="tab" type="button" data-filter="approval">Approvals</button>
+          <button class="tab" type="button" data-filter="error">Errors</button>
+        </div>
+      </div>
 
-<div id="chat">
-  <div id="messages"></div>
-  <div id="input-bar">
-    <input id="msg-input" placeholder="Type a message..." autofocus
-           onkeydown="if(event.key==='Enter')sendMessage()">
-    <button onclick="sendMessage()">Send</button>
+      <section class="board-shell">
+        <div class="section-title">
+          <span>agtx Board</span>
+          <span><button id="board-refresh-btn" type="button">Refresh Board</button></span>
+        </div>
+        <div class="board" id="board"></div>
+      </section>
+
+      <div class="content">
+        <section class="stream" id="stream"></section>
+        <aside class="inspector">
+          <section class="section">
+            <div class="section-title"><span>Approval Gate</span><span id="approval-state">Idle</span></div>
+            <div id="approval-box" class="approval-box">
+              <p id="approval-text">No pending approval. Destructive or sensitive actions will pause here.</p>
+              <div class="approval-actions">
+                <button id="approve-btn" class="primary" type="button" disabled>Approve</button>
+                <button id="deny-btn" class="danger" type="button" disabled>Deny</button>
+              </div>
+            </div>
+          </section>
+          <section class="section">
+            <div class="section-title"><span>Session</span><span id="session-state">Idle</span></div>
+            <div class="kv">
+              <div><span>Provider</span><strong id="side-provider">http://localhost:20128/v1</strong></div>
+              <div><span>Model</span><strong id="side-model">qwen3.7-plus</strong></div>
+              <div><span>Target</span><strong id="side-target">none</strong></div>
+              <div><span>Status</span><strong id="side-status">waiting</strong></div>
+            </div>
+          </section>
+          <section class="section">
+            <div class="section-title"><span>Reports</span><span>API</span></div>
+            <div class="form-grid">
+              <button id="sessions-btn" type="button">Load Sessions</button>
+              <button id="metrics-btn" type="button">Load Metrics</button>
+              <div id="report-output" class="hint">Session and metrics summaries appear here.</div>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <div class="composer">
+        <input id="message" placeholder="Send operator guidance to the active session" disabled>
+        <button id="send-btn" type="button" disabled>Send</button>
+      </div>
+    </main>
   </div>
 </div>
 
-<footer>
-  <span id="cost">Cost: $0.00</span>
-  <span id="tokens">Tokens: 0</span>
-</footer>
+<div id="review-overlay" class="review-overlay hide">
+  <section class="review-panel">
+    <div class="review-head">
+      <div>
+        <h2 id="review-title">Task Review</h2>
+        <div class="run-meta" id="review-meta"></div>
+      </div>
+      <button id="review-close-btn" type="button">Close</button>
+    </div>
+    <div class="review-body" id="review-body"></div>
+  </section>
+</div>
 
 <script>
 const THINK_RE = /<think>[\s\S]*?<\/think>\s*/g;
 let ws = null;
-const opsState = {};
+let activeFilter = 'all';
+let eventCount = 0;
+let pendingApproval = false;
+let activeReviewTask = null;
+const REVIEW_STATE_KEY = 'clearwing.reviewState.v1';
 
-function updateOpsPanel() {
-  const panel = document.getElementById('ops-panel');
-  const lines = [];
-  if (opsState.campaign) {
-    const c = opsState.campaign;
-    lines.push(`Campaign "${c.campaign_name || '?'}" \u2500 ${c.projects_completed||0}/${c.projects_total||0} projects \u2500 $${(c.cost_usd||0).toFixed(2)} \u2500 ${c.findings_total||0} findings (${c.verified_total||0} verified) [${c.status||'?'}]`);
-  }
-  if (opsState.sourcehunt) {
-    const s = opsState.sourcehunt;
-    lines.push(`Sourcehunt [${s.stage||'?'}:${s.status||'?'}] \u2500 ${s.findings_so_far||0} findings \u2500 $${(s.cost_usd||0).toFixed(2)}` + (s.detail ? ` \u2500 ${s.detail}` : ''));
-  }
-  if (opsState.hunt) {
-    const h = opsState.hunt;
-    lines.push(`Hunt tier-${h.tier||'?'} band-${h.band||'?'} \u2500 ${h.files_completed||0}/${h.files_total||0} files \u2500 ${h.findings_this_tier||0} findings \u2500 $${(h.budget_remaining||0).toFixed(2)} remaining`);
-  }
-  if (opsState.benchmark) {
-    const b = opsState.benchmark;
-    const dist = b.tier_distribution || {};
-    const distStr = Object.entries(dist).filter(([,v])=>v).map(([k,v])=>`T${k}:${v}`).join(' ');
-    lines.push(`Benchmark "${b.mode||'?'}" \u2500 ${b.targets_completed||0}/${b.targets_total||0} targets \u2500 $${(b.cost_usd||0).toFixed(2)}` + (distStr ? ` \u2500 ${distStr}` : ''));
-  }
-  if (opsState.eval) {
-    const e = opsState.eval;
-    lines.push(`Eval "${e.config_name||'?'}" \u2500 run ${(e.run_index||0)+1}/${e.runs_total||0} \u2500 config ${(e.configs_completed||0)+1}/${e.configs_total||0} \u2500 [${e.status||'?'}] \u2500 $${(e.cost_usd||0).toFixed(2)}`);
-  }
-  if (lines.length) {
-    panel.textContent = '';
-    lines.forEach(line => {
-      const div = document.createElement('div');
-      div.className = 'op-line';
-      div.textContent = line;
-      panel.appendChild(div);
-    });
-    panel.classList.add('active');
-  } else {
-    panel.classList.remove('active');
+const boardFallback = {
+  running: [
+    { title: 'Clearwing Web UI', description: 'FastAPI app on :8899. Operator dashboard is the active control plane.', agent: 'codex', plugin: 'live' },
+  ],
+  review: [],
+  backlog: [],
+  done: [],
+};
+
+function qs(id) { return document.getElementById(id); }
+
+function renderBoard(columns) {
+  const ordered = [
+    ['running', 'Running'],
+    ['review', 'Review'],
+    ['backlog', 'Backlog'],
+    ['planning', 'Planning'],
+    ['done', 'Done'],
+  ];
+  qs('board').innerHTML = ordered.map(([key, label]) => {
+    const items = columns[key] || [];
+    return `
+    <section class="lane">
+      <header><h2>${label}</h2><span class="count">${items.length}</span></header>
+      <div class="cards">
+        ${items.length ? items.map(item => `
+          <button class="card" type="button" data-task-id="${escapeAttr(item.id)}">
+            <strong>${escapeHtml(item.title)}</strong>
+            <p>${escapeHtml(item.description || item.text || 'No description')}</p>
+            <div class="tagrow">
+              ${[item.agent, item.plugin, item.session_name ? 'session' : '', item.branch_name ? 'branch' : '']
+                .filter(Boolean)
+                .map(tag => `<span class="tag ${tagClass(tag)}">${escapeHtml(tag)}</span>`).join('')}
+            </div>
+          </button>
+        `).join('') : '<div class="hint">No cards</div>'}
+      </div>
+    </section>
+  `}).join('');
+  document.querySelectorAll('[data-task-id]').forEach(card => {
+    card.addEventListener('click', () => openTaskReview(card.dataset.taskId));
+  });
+}
+
+async function refreshBoard() {
+  try {
+    const res = await fetch('/api/kanban');
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.json();
+    renderBoard(data.columns || boardFallback);
+  } catch (err) {
+    renderBoard(boardFallback);
+    addEvent('error', 'Board refresh failed', err.message);
   }
 }
 
-function addMessage(text, cls) {
-  const el = document.createElement('div');
-  el.className = 'msg ' + cls;
-  el.textContent = text;
-  document.getElementById('messages').appendChild(el);
-  el.scrollIntoView({behavior: 'smooth'});
-  return el;
+function tagClass(tag) {
+  if (tag.includes('live') || tag.includes('running')) return 'green';
+  if (tag.includes('approval') || tag.includes('qwen')) return 'amber';
+  if (tag.includes('subagent')) return 'violet';
+  return 'blue';
 }
 
-function addApproval(prompt) {
-  const el = document.createElement('div');
-  el.className = 'msg approval';
-  const label = document.createElement('div');
-  label.className = 'label';
-  label.textContent = 'APPROVAL NEEDED';
-  el.appendChild(label);
-  const text = document.createElement('span');
-  text.textContent = prompt;
-  el.appendChild(text);
-  el.appendChild(document.createElement('br'));
-  const btnApprove = document.createElement('button');
-  btnApprove.className = 'approve';
-  btnApprove.textContent = 'Approve';
-  btnApprove.onclick = () => approve(true, btnApprove);
-  el.appendChild(btnApprove);
-  const btnDeny = document.createElement('button');
-  btnDeny.className = 'deny';
-  btnDeny.textContent = 'Deny';
-  btnDeny.onclick = () => approve(false, btnDeny);
-  el.appendChild(btnDeny);
-  document.getElementById('messages').appendChild(el);
-  el.scrollIntoView({behavior: 'smooth'});
-  return el;
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[char]));
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value || '');
+}
+
+function loadReviewState() {
+  try {
+    return JSON.parse(localStorage.getItem(REVIEW_STATE_KEY) || '{}');
+  } catch (err) {
+    return {};
+  }
+}
+
+function saveReviewState(state) {
+  localStorage.setItem(REVIEW_STATE_KEY, JSON.stringify(state));
+}
+
+function getTaskReviewState(taskId) {
+  const all = loadReviewState();
+  return all[taskId] || { decision: 'pending', comments: [] };
+}
+
+function updateTaskReviewState(taskId, updater) {
+  const all = loadReviewState();
+  const current = all[taskId] || { decision: 'pending', comments: [] };
+  all[taskId] = updater(current);
+  saveReviewState(all);
+  return all[taskId];
+}
+
+function formatReviewTime(value) {
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(value));
+  } catch (err) {
+    return value;
+  }
+}
+
+async function openTaskReview(taskId) {
+  if (!taskId) return;
+  activeReviewTask = null;
+  qs('review-overlay').classList.remove('hide');
+  qs('review-title').textContent = 'Loading task...';
+  qs('review-meta').textContent = taskId;
+  qs('review-body').innerHTML = '<div class="hint">Loading review details...</div>';
+  try {
+    const res = await fetch(`/api/kanban/${encodeURIComponent(taskId)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || `${res.status} ${res.statusText}`);
+    renderTaskReview(data.task, data.artifacts || []);
+  } catch (err) {
+    qs('review-title').textContent = 'Task Review Failed';
+    qs('review-body').innerHTML = `<div class="review-block"><pre>${escapeHtml(err.message)}</pre></div>`;
+  }
+}
+
+function renderTaskReview(task, artifacts) {
+  activeReviewTask = task;
+  qs('review-title').textContent = task.title || task.id;
+  qs('review-meta').innerHTML = [
+    task.status,
+    task.agent,
+    task.plugin,
+    task.session_name ? `session ${task.session_name}` : '',
+    task.branch_name ? `branch ${task.branch_name}` : '',
+  ].filter(Boolean).map(v => `<span>${escapeHtml(v)}</span>`).join('');
+
+  const taskSummary = {
+    id: task.id,
+    status: task.status,
+    agent: task.agent,
+    plugin: task.plugin,
+    project_id: task.project_id,
+    session_name: task.session_name,
+    worktree_path: task.worktree_path,
+    branch_name: task.branch_name,
+    source_db: task.source_db,
+    created_at: task.created_at,
+    updated_at: task.updated_at,
+  };
+  const artifactBlocks = artifacts.length ? artifacts.map(a => `
+    <div class="review-block">
+      <h3>${escapeHtml(a.name)}</h3>
+      <div class="hint">${escapeHtml(a.path)}</div>
+      <pre>${escapeHtml(a.content)}</pre>
+    </div>
+  `).join('') : '<div class="review-block"><h3>Artifacts</h3><pre>No local artifacts found for this card.</pre></div>';
+  const reviewState = getTaskReviewState(task.id);
+  const comments = reviewState.comments || [];
+  const commentBlocks = comments.length ? comments.map(comment => `
+    <article class="review-comment">
+      <header>
+        <strong>${escapeHtml(comment.author || 'Reviewer')}</strong>
+        <span>${escapeHtml(formatReviewTime(comment.created_at))}</span>
+      </header>
+      <p>${escapeHtml(comment.text)}</p>
+    </article>
+  `).join('') : '<div class="hint">No comments yet.</div>';
+
+  qs('review-body').innerHTML = `
+    <div class="review-block review-actions">
+      <h3>Review Controls</h3>
+      <div class="review-decision">
+        <span>Decision</span>
+        <strong id="review-decision-state">${escapeHtml(reviewState.decision || 'pending')}</strong>
+      </div>
+      <div class="review-action-row">
+        <button id="review-approve-btn" class="primary" type="button">Approve</button>
+        <button id="review-changes-btn" class="danger" type="button">Request Changes</button>
+      </div>
+      <div class="review-composer">
+        <textarea id="review-chat-input" placeholder="Send review guidance to the active session"></textarea>
+        <button id="review-chat-btn" type="button">Send</button>
+      </div>
+      <div class="hint" id="review-chat-status">Chat sends to the active WebSocket session when connected.</div>
+    </div>
+    <div class="review-block">
+      <h3>Comments</h3>
+      <div class="review-thread" id="review-comments">${commentBlocks}</div>
+      <div class="review-composer" style="margin-top: 10px;">
+        <textarea id="review-comment-input" placeholder="Add a review comment"></textarea>
+        <button id="review-comment-btn" type="button">Add</button>
+      </div>
+    </div>
+    <div class="review-block">
+      <h3>Description</h3>
+      <pre>${escapeHtml(task.description || 'No description')}</pre>
+    </div>
+    <div class="review-block">
+      <h3>Task Metadata</h3>
+      <pre>${escapeHtml(JSON.stringify(taskSummary, null, 2))}</pre>
+    </div>
+    ${artifactBlocks}
+  `;
+  qs('review-approve-btn').addEventListener('click', () => setReviewDecision('approved'));
+  qs('review-changes-btn').addEventListener('click', () => setReviewDecision('changes requested'));
+  qs('review-comment-btn').addEventListener('click', addReviewComment);
+  qs('review-chat-btn').addEventListener('click', sendReviewChat);
+  qs('review-comment-input').addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) addReviewComment();
+  });
+  qs('review-chat-input').addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) sendReviewChat();
+  });
+}
+
+function closeTaskReview() {
+  qs('review-overlay').classList.add('hide');
+  activeReviewTask = null;
+}
+
+function rerenderReviewComments() {
+  if (!activeReviewTask || !qs('review-comments')) return;
+  const comments = getTaskReviewState(activeReviewTask.id).comments || [];
+  qs('review-comments').innerHTML = comments.length ? comments.map(comment => `
+    <article class="review-comment">
+      <header>
+        <strong>${escapeHtml(comment.author || 'Reviewer')}</strong>
+        <span>${escapeHtml(formatReviewTime(comment.created_at))}</span>
+      </header>
+      <p>${escapeHtml(comment.text)}</p>
+    </article>
+  `).join('') : '<div class="hint">No comments yet.</div>';
+}
+
+function setReviewDecision(decision) {
+  if (!activeReviewTask) return;
+  updateTaskReviewState(activeReviewTask.id, current => ({
+    ...current,
+    decision,
+    decided_at: new Date().toISOString(),
+  }));
+  qs('review-decision-state').textContent = decision;
+  addEvent('approval', `Review ${decision}`, activeReviewTask.title || activeReviewTask.id);
+}
+
+function addReviewComment() {
+  if (!activeReviewTask) return;
+  const input = qs('review-comment-input');
+  const text = input.value.trim();
+  if (!text) return;
+  updateTaskReviewState(activeReviewTask.id, current => ({
+    ...current,
+    comments: [
+      ...(current.comments || []),
+      {
+        author: 'web',
+        text,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  }));
+  input.value = '';
+  rerenderReviewComments();
+  addEvent('operator', 'Review comment', `${activeReviewTask.title || activeReviewTask.id}\n${text}`);
+}
+
+function sendReviewChat() {
+  if (!activeReviewTask) return;
+  const input = qs('review-chat-input');
+  const content = input.value.trim();
+  if (!content) return;
+  const message = `[review:${activeReviewTask.id}] ${content}`;
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    qs('review-chat-status').textContent = 'No active WebSocket session. Comment saved locally instead.';
+    updateTaskReviewState(activeReviewTask.id, current => ({
+      ...current,
+      comments: [
+        ...(current.comments || []),
+        {
+          author: 'web',
+          text: `Chat draft: ${content}`,
+          created_at: new Date().toISOString(),
+        },
+      ],
+    }));
+    rerenderReviewComments();
+    input.value = '';
+    return;
+  }
+  ws.send(JSON.stringify({ type: 'message', content: message }));
+  addEvent('operator', 'Review chat', message);
+  qs('review-chat-status').textContent = 'Sent to active session.';
+  input.value = '';
+}
+
+function setHealth(ok, text) {
+  qs('health-dot').className = `dot ${ok ? 'ok' : 'warn'}`;
+  qs('health-text').textContent = text;
+}
+
+function setSocket(state, text) {
+  const cls = state === 'ok' ? 'ok' : state === 'warn' ? 'warn' : '';
+  qs('socket-dot').className = `dot ${cls}`;
+  qs('socket-text').textContent = text;
+  qs('session-state').textContent = text;
+}
+
+async function checkHealth() {
+  try {
+    const res = await fetch('/api/health');
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    setHealth(true, `${data.service || 'clearwing'} ok`);
+  } catch (err) {
+    setHealth(false, 'API unavailable');
+    addEvent('error', 'Health check failed', err.message);
+  }
+}
+
+function addEvent(kind, title, text) {
+  eventCount += 1;
+  qs('event-count').textContent = eventCount;
+  qs('last-update').textContent = new Date().toLocaleTimeString();
+
+  const row = document.createElement('article');
+  row.className = `event ${kind}`;
+  row.dataset.kind = kind;
+  row.innerHTML = `
+    <time>${new Date().toLocaleTimeString()}</time>
+    <div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(text || '')}</p></div>
+  `;
+  if (activeFilter !== 'all' && activeFilter !== kind) row.classList.add('hide');
+  qs('stream').appendChild(row);
+  row.scrollIntoView({ block: 'end' });
+}
+
+function applyFilter(filter) {
+  if (!filter) return;
+  activeFilter = filter;
+  document.querySelectorAll('.tab[data-filter]').forEach(tab => tab.classList.toggle('active', tab.dataset.filter === filter));
+  document.querySelectorAll('.event').forEach(row => {
+    row.classList.toggle('hide', filter !== 'all' && row.dataset.kind !== filter);
+  });
 }
 
 function startSession() {
-  const target = document.getElementById('target').value;
-  const model = document.getElementById('model').value;
-  const baseUrl = document.getElementById('base-url').value;
-  const apiKey = document.getElementById('api-key').value;
+  if (ws && ws.readyState === WebSocket.OPEN) ws.close();
+  clearApprovalGate();
+
+  const target = qs('target').value.trim();
+  const model = qs('model').value.trim() || 'qwen3.7-plus';
+  const baseUrl = qs('base-url').value.trim();
+  const apiKey = qs('api-key').value;
+  const goals = qs('goals').value.split('\n').map(g => g.trim()).filter(Boolean);
+
+  qs('run-title').textContent = target ? `Run against ${target}` : 'Operator session';
+  qs('run-target').textContent = target || 'Target not set';
+  qs('run-model').textContent = `Model ${model}`;
+  qs('run-provider').textContent = baseUrl || 'Saved provider config';
+  qs('side-target').textContent = target || 'none';
+  qs('side-model').textContent = model;
+  qs('side-provider').textContent = baseUrl || 'saved config';
+  qs('side-status').textContent = 'connecting';
 
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws/agent`);
+  setSocket('warn', 'Connecting');
+  addEvent('tool', 'Opening session', goals.length ? goals.join('\n') : 'No goals provided yet.');
 
   ws.onopen = () => {
-    document.getElementById('conn-status').textContent = 'Connected';
-    document.getElementById('conn-status').className = 'status connected';
-    document.getElementById('setup').style.display = 'none';
-    document.getElementById('chat').style.display = 'flex';
-
+    setSocket('ok', 'Connected');
+    qs('disconnect-btn').disabled = false;
+    qs('message').disabled = false;
+    qs('send-btn').disabled = false;
+    qs('side-status').textContent = 'connected';
     ws.send(JSON.stringify({
-      type: 'start', target, model,
+      type: 'start',
+      target,
+      model,
       base_url: baseUrl || undefined,
       api_key: apiKey || undefined,
+      goals,
+      max_turns: Number(qs('max-turns').value || 50),
     }));
   };
 
   ws.onclose = () => {
-    document.getElementById('conn-status').textContent = 'Disconnected';
-    document.getElementById('conn-status').className = 'status';
-    addMessage('Connection closed.', 'error');
+    setSocket('', 'Socket closed');
+    qs('disconnect-btn').disabled = true;
+    qs('message').disabled = true;
+    qs('send-btn').disabled = true;
+    qs('side-status').textContent = 'closed';
+    clearApprovalGate();
+    addEvent('error', 'Connection closed', 'The WebSocket session ended.');
   };
 
-  ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    const data = msg.data || {};
-    switch (msg.type) {
-      case 'started':
-        document.getElementById('session-info').textContent =
-          `Session: ${msg.session_id} | Model: ${msg.model}`;
-        addMessage(`Session started. Target: ${msg.target || '(none)'}`, 'tool');
-        break;
-      case 'agent_message': {
-        let content = typeof data === 'string' ? data :
-                      (data.content || data.text || JSON.stringify(data));
-        content = content.replace(THINK_RE, '');
-        if (content.trim()) addMessage(content.trim(), 'agent');
-        break;
-      }
-      case 'tool_start':
-        addMessage(`>>> ${data.tool || data.name || 'tool'} ${JSON.stringify(data.args || {}).slice(0, 100)}`, 'tool');
-        break;
-      case 'tool_result':
-        addMessage(`<<< ${data.tool || data.name || 'tool'} (${data.content_length || '?'} bytes)`, 'tool');
-        break;
-      case 'flag_found':
-        addMessage(`FLAG: ${data.flag || JSON.stringify(data)}`, 'flag');
-        break;
-      case 'cost_update':
-        document.getElementById('cost').textContent = `Cost: $${(data.cost_usd || 0).toFixed(4)}`;
-        document.getElementById('tokens').textContent = `Tokens: ${data.tokens || 0}`;
-        break;
-      case 'approval_needed': {
-        const prompt = data.prompt || JSON.stringify(data);
-        addApproval(prompt);
-        break;
-      }
-      case 'error':
-        addMessage(`Error: ${data.message || JSON.stringify(data)}`, 'error');
-        break;
-      case 'complete':
-        addMessage('Agent completed.', 'tool');
-        break;
-      case 'campaign_progress':
-        opsState.campaign = data;
-        updateOpsPanel();
-        break;
-      case 'sourcehunt_stage':
-        opsState.sourcehunt = data;
-        updateOpsPanel();
-        break;
-      case 'hunt_progress':
-        opsState.hunt = data;
-        updateOpsPanel();
-        break;
-      case 'validation_result': {
-        const axes = data.axes || {};
-        const axStr = Object.entries(axes).map(([k,v])=>`${k}:${v?'pass':'fail'}`).join(' ');
-        const outcome = data.advance ? 'advanced' : 'rejected';
-        addMessage(`[VALIDATOR] ${data.finding_id||'?'}: ${axStr} \u2192 ${outcome} (severity=${data.severity||'n/a'})`, 'validation');
-        break;
-      }
-      case 'disclosure_update':
-        addMessage(`[DISCLOSURE] ${data.finding_id||'?'}: ${data.action||'update'}` + (data.detail ? ` \u2014 ${data.detail}` : ''), 'progress');
-        break;
-      case 'benchmark_progress':
-        opsState.benchmark = data;
-        updateOpsPanel();
-        break;
-      case 'eval_progress':
-        opsState.eval = data;
-        updateOpsPanel();
-        break;
+  ws.onerror = () => addEvent('error', 'Socket error', 'The browser could not maintain the WebSocket connection.');
+  ws.onmessage = handleMessage;
+}
+
+function handleMessage(event) {
+  const msg = JSON.parse(event.data);
+  const data = msg.data || {};
+  switch (msg.type) {
+    case 'started':
+      qs('session-id').textContent = msg.session_id || 'active';
+      qs('side-status').textContent = 'started';
+      addEvent('tool', 'Session started', `Target: ${msg.target || 'none'}\nModel: ${msg.model || qs('model').value}`);
+      break;
+    case 'agent_message': {
+      let content = typeof data === 'string' ? data : (data.content || data.text || JSON.stringify(data));
+      content = content.replace(THINK_RE, '').trim();
+      if (content) addEvent('agent', 'Agent', content);
+      break;
     }
-  };
+    case 'tool_start':
+      addEvent('tool', `Tool started: ${data.tool || data.name || 'tool'}`, JSON.stringify(data.data || data.args || {}, null, 2));
+      break;
+    case 'tool_result':
+      addEvent('tool', `Tool result: ${data.tool || data.name || 'tool'}`, JSON.stringify(data.data || data, null, 2).slice(0, 1800));
+      break;
+    case 'approval_needed':
+      showApproval(data.prompt || JSON.stringify(data));
+      addEvent('approval', 'Approval needed', data.prompt || JSON.stringify(data));
+      break;
+    case 'flag_found':
+      addEvent('flag', 'Flag found', data.flag || JSON.stringify(data));
+      break;
+    case 'cost_update':
+      qs('cost').textContent = `$${Number(data.cost_usd || 0).toFixed(4)}`;
+      qs('tokens').textContent = String(data.tokens || 0);
+      break;
+    case 'complete':
+      qs('side-status').textContent = 'complete';
+      addEvent('tool', 'Run complete', 'Agent completed.');
+      break;
+    case 'error':
+      addEvent('error', 'Error', data.message || JSON.stringify(data));
+      break;
+    case 'campaign_progress':
+    case 'sourcehunt_stage':
+    case 'hunt_progress':
+    case 'validation_result':
+    case 'disclosure_update':
+    case 'benchmark_progress':
+    case 'eval_progress':
+      addEvent('tool', msg.type.replaceAll('_', ' '), JSON.stringify(data, null, 2));
+      break;
+    default:
+      addEvent('tool', msg.type, JSON.stringify(data, null, 2));
+  }
+}
+
+function showApproval(text) {
+  pendingApproval = true;
+  qs('approval-state').textContent = 'Waiting';
+  qs('approval-text').textContent = text;
+  qs('approve-btn').disabled = false;
+  qs('deny-btn').disabled = false;
+}
+
+function respondApproval(approved) {
+  if (!ws || ws.readyState !== WebSocket.OPEN || !pendingApproval) return;
+  ws.send(JSON.stringify({ type: 'approve', approved }));
+  pendingApproval = false;
+  qs('approval-state').textContent = approved ? 'Approved' : 'Denied';
+  addEvent('approval', approved ? 'Approved' : 'Denied', qs('approval-text').textContent);
+  qs('approval-text').textContent = approved
+    ? 'Approval sent. Waiting for the agent to continue.'
+    : 'Denial sent. Waiting for the agent to continue.';
+  qs('approve-btn').disabled = true;
+  qs('deny-btn').disabled = true;
+}
+
+function clearApprovalGate() {
+  pendingApproval = false;
+  qs('approval-state').textContent = 'Idle';
+  qs('approval-text').textContent = 'No pending approval. Destructive or sensitive actions will pause here.';
+  qs('approve-btn').disabled = true;
+  qs('deny-btn').disabled = true;
 }
 
 function sendMessage() {
-  const input = document.getElementById('msg-input');
-  const text = input.value.trim();
-  if (!text || !ws) return;
-  addMessage(text, 'user');
-  ws.send(JSON.stringify({type: 'message', content: text}));
+  const input = qs('message');
+  const content = input.value.trim();
+  if (!content || !ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ type: 'message', content }));
+  addEvent('operator', 'Operator', content);
   input.value = '';
 }
 
-function approve(approved, btn) {
-  if (!ws) return;
-  ws.send(JSON.stringify({type: 'approve', approved}));
-  const parent = btn.parentElement;
-  parent.querySelectorAll('button').forEach(b => b.disabled = true);
-  addMessage(approved ? 'Approved.' : 'Denied.', 'tool');
+async function loadSessions() {
+  try {
+    const res = await fetch('/api/sessions');
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.json();
+    const sessions = Array.isArray(data) ? data : (Array.isArray(data.value) ? data.value : []);
+    renderSessions(sessions);
+  } catch (err) {
+    qs('report-output').textContent = `Session load failed: ${err.message}`;
+  }
 }
+
+function renderSessions(sessions) {
+  const output = qs('report-output');
+  if (!sessions.length) {
+    output.textContent = 'No saved sessions returned.';
+    return;
+  }
+  output.textContent = '';
+  output.className = 'session-list';
+  sessions.slice(0, 10).forEach(session => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'session-row';
+    btn.innerHTML = `
+      <strong>${escapeHtml(session.session_id || 'unknown')} &middot; ${escapeHtml(session.status || 'unknown')}</strong>
+      <span>${escapeHtml(session.target || 'No target')}</span>
+      <span>${escapeHtml(formatDate(session.start_time))} &middot; $${Number(session.cost_usd || 0).toFixed(4)} &middot; ${Number(session.token_count || 0)} tokens</span>
+      <span>${Number(session.vulnerabilities || 0)} vulns &middot; ${Number(session.flags_found || 0)} flags &middot; ${Number(session.services || 0)} services</span>
+    `;
+    btn.addEventListener('click', () => loadSessionDetail(session.session_id));
+    output.appendChild(btn);
+  });
+}
+
+async function loadSessionDetail(sessionId) {
+  if (!sessionId) return;
+  try {
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`);
+    const detail = await res.json();
+    if (!res.ok) throw new Error(detail.detail || `${res.status} ${res.statusText}`);
+    qs('session-id').textContent = detail.session_id || sessionId;
+    qs('side-target').textContent = detail.target || 'none';
+    qs('side-model').textContent = detail.model || 'unknown';
+    qs('side-status').textContent = detail.status || 'unknown';
+    qs('run-title').textContent = `Session ${detail.session_id || sessionId}`;
+    qs('run-target').textContent = detail.target || 'Target not set';
+    qs('run-model').textContent = `Model ${detail.model || 'unknown'}`;
+    const summary = {
+      session_id: detail.session_id,
+      status: detail.status,
+      target: detail.target,
+      model: detail.model,
+      start_time: detail.start_time,
+      end_time: detail.end_time,
+      cost_usd: detail.cost_usd,
+      token_count: detail.token_count,
+      open_ports: detail.open_ports?.length || 0,
+      services: detail.services?.length || 0,
+      vulnerabilities: detail.vulnerabilities?.length || 0,
+      flags_found: detail.flags_found?.length || 0,
+    };
+    qs('report-output').className = 'session-detail';
+    qs('report-output').textContent = JSON.stringify(summary, null, 2);
+    addEvent('tool', 'Session loaded', `Session ${detail.session_id || sessionId}`);
+  } catch (err) {
+    qs('report-output').textContent = `Session detail failed: ${err.message}`;
+  }
+}
+
+function formatDate(value) {
+  if (!value) return 'No start time';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+async function loadMetrics() {
+  try {
+    const res = await fetch('/api/metrics');
+    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+    const data = await res.json();
+    qs('report-output').className = 'session-detail';
+    qs('report-output').textContent = JSON.stringify(data, null, 2);
+  } catch (err) {
+    qs('report-output').textContent = `Metrics load failed: ${err.message}`;
+  }
+}
+
+async function startOperator() {
+  const target = qs('target').value.trim();
+  const model = qs('model').value.trim() || 'qwen3.7-plus';
+  const baseUrl = qs('base-url').value.trim();
+  const apiKey = qs('api-key').value;
+  const goals = qs('goals').value.split('\n').map(g => g.trim()).filter(Boolean);
+  if (!target || !goals.length) {
+    addEvent('error', 'Operator requires target and goals', 'Set a target and at least one goal before starting an autonomous run.');
+    return;
+  }
+
+  qs('run-title').textContent = `Operator run against ${target}`;
+  qs('run-target').textContent = target;
+  qs('run-model').textContent = `Model ${model}`;
+  qs('run-provider').textContent = baseUrl || 'Saved provider config';
+  qs('side-target').textContent = target;
+  qs('side-model').textContent = model;
+  qs('side-provider').textContent = baseUrl || 'saved config';
+  qs('side-status').textContent = 'operator starting';
+  addEvent('tool', 'Starting operator', goals.join('\n'));
+
+  try {
+    const res = await fetch('/api/operate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target,
+        goals,
+        model,
+        base_url: baseUrl || undefined,
+        api_key: apiKey || undefined,
+        max_turns: Number(qs('max-turns').value || 50),
+        auto_approve_exploits: false,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+    qs('session-id').textContent = data.session_id || 'operator';
+    qs('side-status').textContent = data.status || 'running';
+    addEvent('tool', 'Operator started', `Session: ${data.session_id}\nStatus: ${data.status}`);
+  } catch (err) {
+    qs('side-status').textContent = 'operator error';
+    addEvent('error', 'Operator start failed', err.message);
+  }
+}
+
+function disconnect() {
+  if (ws) ws.close();
+}
+
+refreshBoard();
+checkHealth();
+setInterval(checkHealth, 15000);
+setInterval(refreshBoard, 10000);
+qs('refresh-btn').addEventListener('click', checkHealth);
+qs('board-refresh-btn').addEventListener('click', refreshBoard);
+qs('review-close-btn').addEventListener('click', closeTaskReview);
+qs('review-overlay').addEventListener('click', event => {
+  if (event.target.id === 'review-overlay') closeTaskReview();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeTaskReview();
+});
+qs('start-btn').addEventListener('click', startSession);
+qs('operate-btn').addEventListener('click', startOperator);
+qs('disconnect-btn').addEventListener('click', disconnect);
+qs('send-btn').addEventListener('click', sendMessage);
+qs('message').addEventListener('keydown', event => { if (event.key === 'Enter') sendMessage(); });
+qs('approve-btn').addEventListener('click', () => respondApproval(true));
+qs('deny-btn').addEventListener('click', () => respondApproval(false));
+qs('sessions-btn').addEventListener('click', loadSessions);
+qs('metrics-btn').addEventListener('click', loadMetrics);
+document.querySelectorAll('.tab[data-filter]').forEach(tab => tab.addEventListener('click', () => applyFilter(tab.dataset.filter)));
 </script>
 </body>
 </html>
