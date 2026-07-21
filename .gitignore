@@ -119,3 +119,22 @@ results/
 .codegraph/
 .llm-wiki/
 .cline/
+.agents/
+.agtx/
+.claude/
+
+# Operator environment files (machine-local persona/memory, not source)
+SOUL.md
+TOOLS.md
+LLM_WIKI_MEMORY.md
+
+# Vendored external checkouts (separate projects, kept local only —
+# same convention as .reference/ above)
+agtx/
+Awesome-AI-Hacking-Agents/
+additional_tools/
+
+# Runtime-generated agent custom tools (created by dynamic_tool_creator at
+# runtime, not source; __init__.py stays tracked)
+clearwing/agent/custom_tools/*.py
+!clearwing/agent/custom_tools/__init__.py
