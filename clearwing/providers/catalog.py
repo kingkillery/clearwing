@@ -263,6 +263,24 @@ PROVIDER_PRESETS: tuple[ProviderPreset, ...] = (
         api_key_env_var=None,
         provider_adapter="openai",
     ),
+    ProviderPreset(
+        key="9router",
+        display_name="9Router (local AI gateway)",
+        description="Local OpenAI-compatible gateway at http://127.0.0.1:20128/v1. "
+        "Access Qwen, Claude, GPT via combos like 'medium' or direct model IDs.",
+        docs_url="https://github.com/prest/9router",
+        default_base_url="http://127.0.0.1:20128/v1",
+        default_model="medium",
+        api_key_env_var=None,
+        is_local=True,
+        alt_models=(
+            "qwen3.5plus",
+            "cx/gpt-5.5",
+            "ag/claude-sonnet-4-6",
+            "Nvidia_Super",
+        ),
+        provider_adapter="openai",
+    ),
 )
 
 
