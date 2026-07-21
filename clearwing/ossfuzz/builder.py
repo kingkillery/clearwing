@@ -95,6 +95,8 @@ class OssFuzzBuilder:
         out_dir: str | Path,
         *,
         patch_diff: str | None = None,
+        extra_files: dict[str, bytes] | None = None,
+        build_sh_override: str | None = None,
     ) -> BuildResult:
         """Run build.sh inside a base-builder container.
 
@@ -107,7 +109,12 @@ class OssFuzzBuilder:
             out_dir: host dir receiving fuzzer binaries ($OUT).
             patch_diff: optional unified diff applied with ``patch -p1``
                 inside $SRC/<name> before building (patch validation).
-
+            extra_files: optional ``{container_path: content}`` written into
+                the container after source staging, before building — used
+                to inject LLM-synthesized harnesses without touching the
+                host checkout.
+            build_sh_override: optional build script text used instead of
+                ``<project_dir>/build.sh`` (synthesized per-harness builds).
         Returns:
             BuildResult; never raises for build failures — check
             ``result.success`` / ``result.error``.
@@ -121,10 +128,15 @@ class OssFuzzBuilder:
             image=image,
         )
 
-        build_sh = Path(project_dir) / "build.sh"
-        if not build_sh.is_file():
+        build_sh_path = Path(project_dir) / "build.sh"
+        if build_sh_override is None and not build_sh_path.is_file():
             result.error = f"build.sh not found in {project_dir}"
             return result
+        build_sh_text = (
+            build_sh_override.encode("utf-8")
+            if build_sh_override is not None
+            else build_sh_path.read_bytes()
+        )
         source = Path(source_dir)
         if not source.is_dir():
             result.error = f"source dir not found: {source_dir}"
@@ -170,7 +182,13 @@ class OssFuzzBuilder:
                         result.error = f"patch apply failed: {err}"
                         return self._finish(result, start)
 
-                sb.write_file("/src/build.sh", build_sh.read_bytes())
+                if extra_files:
+                    ok, err = self._write_extra_files(sb, extra_files)
+                    if not ok:
+                        result.error = err
+                        return self._finish(result, start)
+
+                sb.write_file("/src/build.sh", build_sh_text)
                 chmod = sb.exec(["chmod", "+x", "/src/build.sh"], timeout=10)
                 if chmod.exit_code != 0:
                     result.error = f"chmod build.sh failed: {chmod.stderr[:300]}"
@@ -270,6 +288,21 @@ class OssFuzzBuilder:
         )
         if res.exit_code != 0:
             return False, f"apt-get install failed: {(res.stdout + res.stderr)[-400:]}"
+        return True, ""
+
+    def _write_extra_files(
+        self, sb: SandboxContainer, extra_files: dict[str, bytes]
+    ) -> tuple[bool, str]:
+        """Write caller-supplied files into the container (harness injection)."""
+        for container_path, content in extra_files.items():
+            parent = str(Path(container_path).parent).replace("\\", "/")
+            mkdir = sb.exec(["mkdir", "-p", parent], timeout=10)
+            if mkdir.exit_code != 0:
+                return False, f"mkdir for {container_path} failed: {mkdir.stderr[:200]}"
+            try:
+                sb.write_file(container_path, content)
+            except Exception as exc:
+                return False, f"write {container_path} failed: {exc}"
         return True, ""
 
     def _apply_patch(

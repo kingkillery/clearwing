@@ -115,15 +115,40 @@ class TestFuzzRun:
         assert saved.is_file()
         assert saved.read_bytes() == b"POC-DATA"
 
-        # Sandbox hardened: no network, $OUT mounted ro, crashes dir rw
+        # Sandbox hardened: no network, $OUT mounted ro; /artifacts is a
+        # fresh per-invocation staging dir (NOT the shared crashes dir, so
+        # stale artifacts from other runs/fuzzers can't leak in)
         kwargs = client.containers.run.call_args.kwargs
         assert kwargs["network_mode"] == "none"
         volumes = kwargs["volumes"]
         assert volumes[str(out_dir.resolve())] == {"bind": "/out", "mode": "ro"}
-        assert volumes[str(crashes_dir.resolve())] == {
-            "bind": "/artifacts",
-            "mode": "rw",
-        }
+        artifacts_mounts = [
+            host for host, spec in volumes.items() if spec["bind"] == "/artifacts"
+        ]
+        assert len(artifacts_mounts) == 1
+        assert artifacts_mounts[0] != str(crashes_dir.resolve())
+        assert "clearwing-fuzz-fuzz_a-" in artifacts_mounts[0]
+        assert volumes[artifacts_mounts[0]]["mode"] == "rw"
+
+    def test_stale_artifacts_not_visible(self, mock_docker, out_dir, tmp_path):
+        """Leftover crash files in the shared crashes dir must not be
+        attributed to a later run of the same fuzzer."""
+        _, container = mock_docker
+        crashes_dir = tmp_path / "crashes"
+        stale = crashes_dir / "fuzz_a"
+        stale.mkdir(parents=True)
+        (stale / "crash-STALE").write_bytes(b"old crash from a previous run")
+
+        # This run produces ONE fresh artifact (per the router's ls output)
+        container.exec_run.side_effect = _fuzz_router(artifact_names=("crash-fresh1",))
+        container.get_archive.side_effect = lambda path: (
+            iter([_tar_bytes(path.rsplit("/", 1)[-1], b"FRESH")]), {},
+        )
+        result = FuzzRunner(FuzzConfig(crashes_dir=str(crashes_dir))).fuzz(out_dir, "fuzz_a")
+        assert result.success
+        names = [c.artifact_name for c in result.crashes]
+        assert names == ["crash-fresh1"]
+        assert "crash-STALE" not in names
 
     def test_fuzz_command_args(self, mock_docker, out_dir, tmp_path):
         _, container = mock_docker

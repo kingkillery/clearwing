@@ -126,6 +126,16 @@ def add_parser(subparsers):
         help="Auto-extract CVE history from git log as seed context",
     )
     parser.add_argument(
+        "--fuzz-stage",
+        action="store_true",
+        default=False,
+        dest="fuzz_stage",
+        help="OSS-Fuzz-backed crash-first stage: synthesize harnesses with "
+        "build-error repair, fuzz with libFuzzer, seed hunters with "
+        "signature-deduped crashes, and emit crash_reproduced findings. "
+        "Requires Docker (pulls OSS-Fuzz base images on first use).",
+    )
+    parser.add_argument(
         "--budget",
         type=float,
         default=0.0,
@@ -901,6 +911,7 @@ def handle(cli, args):
         enable_behavior_monitor=not getattr(args, "no_behavior_monitor", False),
         enable_artifact_store=getattr(args, "encrypt_artifacts", False),
         gvisor_runtime="runsc" if getattr(args, "gvisor", False) else None,
+        fuzz_stage=getattr(args, "fuzz_stage", False),
     )
 
     cli.console.print(

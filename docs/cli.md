@@ -63,6 +63,13 @@ Depths:
   30s per file) and enables auto-patch mode. Most expensive in both
   wall time and tokens.
 
+Crash-first backends: at `deep` depth (or with `seed_harness_crashes`)
+the legacy one-shot HarnessGenerator runs. `--fuzz-stage` swaps in the
+OSS-Fuzz-backed stage instead — repair-looped harness synthesis, real
+libFuzzer budgets, signature-deduped crashes seeded to hunters, and
+findings emitted at `crash_reproduced`. Requires Docker. See
+[OSS-Fuzz integration](ossfuzz.md#the-sourcehunt-fuzz-stage-fuzz-stage).
+
 ### Agent & prompt control (specs 001–002)
 
 ```bash

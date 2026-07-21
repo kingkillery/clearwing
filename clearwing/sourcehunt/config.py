@@ -68,6 +68,7 @@ class FeatureFlags:
     enable_artifact_store: bool = False
     no_per_file_hunt: bool = False
     seed_harness_crashes: bool = False
+    fuzz_stage: bool = False  # OSS-Fuzz-backed crash-first stage (spec 018 v2)
     preprocessing: bool = True
     adversarial_verifier: bool = True
     adversarial_threshold: str | None = "static_corroboration"

@@ -84,9 +84,36 @@ class TestRendering:
         sh = p.render_build_sh(["fuzz_a.c", "fuzz_b.c"])
         assert sh.startswith("#!/bin/bash -eu")
         assert "$LIB_FUZZING_ENGINE" in sh
-        assert "-o $OUT/fuzz_a" in sh
-        assert "-o $OUT/fuzz_b" in sh
+        # Output names are quoted and path-hash suffixed for uniqueness
+        assert '-o "$OUT/fuzz_a-' in sh
+        assert '-o "$OUT/fuzz_b-' in sh
         assert "$CXX $CXXFLAGS" in sh
+
+    def test_build_sh_same_stem_harnesses_get_unique_outputs(self):
+        p = OssFuzzProject(name="proj")
+        sh = p.render_build_sh(["src/parser.cc", "vendor/parser.cc"])
+        # Same stem, different paths → two distinct $OUT binaries
+        import re as _re
+
+        outputs = _re.findall(r'-o "\$OUT/([a-z0-9-]+)"', sh)
+        assert len(outputs) == 2
+        assert outputs[0] != outputs[1]
+        assert all(o.startswith("parser-") for o in outputs)
+
+    def test_build_sh_rejects_traversal(self):
+        p = OssFuzzProject(name="proj")
+        import pytest as _pytest
+
+        with _pytest.raises(ValueError, match="unsafe repo-relative path"):
+            p.render_build_sh(["../outside.c"])
+        with _pytest.raises(ValueError, match="unsafe repo-relative path"):
+            p.render_build_sh(["/abs/path.c"])
+
+    def test_build_sh_quotes_spacey_harness_names(self):
+        p = OssFuzzProject(name="proj")
+        sh = p.render_build_sh(["src/my parser.c"])
+        # shlex-quoted so the space can't split the argument
+        assert "'src/my parser.c'" in sh
 
 
 class TestScaffold:

@@ -13,6 +13,8 @@ artifact is copied to the host crashes dir so PoCs survive the container.
 from __future__ import annotations
 
 import logging
+import shutil
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -116,11 +118,20 @@ class FuzzRunner:
             return result
 
         crashes_dir = Path(self.config.crashes_dir) if self.config.crashes_dir else out / "crashes"
-        crashes_dir.mkdir(parents=True, exist_ok=True)
+        (crashes_dir / fuzzer_name).mkdir(parents=True, exist_ok=True)
+        # Fresh /artifacts per invocation: a unique staging dir guarantees
+        # this run only ever sees its OWN artifacts — stale crash-* files
+        # from earlier fuzzers AND from previous runs of this same fuzzer
+        # are invisible. Confirmed artifacts are persisted to the stable
+        # host layout <crashes>/<fuzzer>/ by _collect_artifact; staging is
+        # removed in the finally below.
+        staging_dir = Path(
+            tempfile.mkdtemp(prefix=f"clearwing-fuzz-{fuzzer_name}-")
+        )
 
         mounts = [
             (str(out.resolve()), "/out", "ro"),
-            (str(crashes_dir.resolve()), "/artifacts", "rw"),
+            (str(staging_dir.resolve()), "/artifacts", "rw"),
         ]
         corpus_mount: tuple[str, str, str] | None = None
         if self.config.corpus_dir:
@@ -144,9 +155,10 @@ class FuzzRunner:
 
         try:
             with SandboxContainer(cfg) as sb:
-                cmd = self._fuzz_command(fuzzer_name, corpus_mount is not None)
+                # argv list — no shell, so fuzzer_name/args are never
+                # reinterpreted (no quoting/metacharacter surface at all)
                 run = sb.exec(
-                    ["sh", "-c", cmd],
+                    self._fuzz_argv(fuzzer_name, corpus_mount is not None),
                     timeout=self.config.max_total_time_seconds
                     + self.config.exec_timeout_slack_seconds,
                 )
@@ -180,7 +192,8 @@ class FuzzRunner:
         except Exception as exc:
             logger.warning("Fuzz run failed for %s", fuzzer_name, exc_info=True)
             result.error = f"{type(exc).__name__}: {exc}"
-
+        finally:
+            shutil.rmtree(staging_dir, ignore_errors=True)
         result.duration_seconds = time.monotonic() - start
         return result
 
@@ -228,7 +241,7 @@ class FuzzRunner:
         try:
             with SandboxContainer(cfg) as sb:
                 run = sb.exec(
-                    ["sh", "-c", f"/out/{fuzzer_name} /input/{crash_input.name} 2>&1"],
+                    [f"/out/{fuzzer_name}", f"/input/{crash_input.name}"],
                     timeout=timeout_seconds,
                 )
                 output = run.stdout + run.stderr
@@ -254,8 +267,10 @@ class FuzzRunner:
         # or a custom image via FuzzConfig.image when a target needs more.
         return self.config.image or DEFAULT_RUNNER_IMAGE
 
-    def _fuzz_command(self, fuzzer_name: str, has_corpus: bool) -> str:
-        args = [
+    def _fuzz_argv(self, fuzzer_name: str, has_corpus: bool) -> list[str]:
+        """libFuzzer invocation as an argv list (no shell involved)."""
+        argv = [
+            f"/out/{fuzzer_name}",
             f"-max_total_time={self.config.max_total_time_seconds}",
             f"-rss_limit_mb={self.config.rss_limit_mb}",
             "-artifact_prefix=/artifacts/",
@@ -263,10 +278,11 @@ class FuzzRunner:
         ]
         if self.config.dictionary:
             # Dictionary is expected inside the mounted $OUT dir
-            args.append(f"-dict=/out/{Path(self.config.dictionary).name}")
-        args.extend(self.config.extra_args)
-        corpus_arg = "/corpus" if has_corpus else ""
-        return f"/out/{fuzzer_name} {' '.join(args)} {corpus_arg} 2>&1"
+            argv.append(f"-dict=/out/{Path(self.config.dictionary).name}")
+        argv.extend(self.config.extra_args)
+        if has_corpus:
+            argv.append("/corpus")
+        return argv
 
     def _list_artifacts(self, sb: SandboxContainer) -> list[str]:
         """List crash artifact filenames written by libFuzzer."""
@@ -301,7 +317,7 @@ class FuzzRunner:
 
         # Confirm inside the same container: run the fuzzer on the artifact
         run = sb.exec(
-            ["sh", "-c", f"/out/{fuzzer_name} /artifacts/{artifact_name} 2>&1"],
+            [f"/out/{fuzzer_name}", f"/artifacts/{artifact_name}"],
             timeout=60,
         )
         output = run.stdout + run.stderr

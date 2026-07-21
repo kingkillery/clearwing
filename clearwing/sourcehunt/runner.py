@@ -218,6 +218,7 @@ class SourceHuntRunner:
         gvisor_runtime: str | None = None,
         preprocessing: bool = True,
         seed_harness_crashes: bool = False,
+        fuzz_stage: bool = False,
         *,
         config: SourceHuntConfig | None = None,
     ):
@@ -298,6 +299,7 @@ class SourceHuntRunner:
             enable_artifact_store = enable_artifact_store or f.enable_artifact_store
             no_per_file_hunt = no_per_file_hunt or f.no_per_file_hunt
             seed_harness_crashes = seed_harness_crashes or f.seed_harness_crashes
+            fuzz_stage = fuzz_stage or f.fuzz_stage
             preprocessing = preprocessing and f.preprocessing
             adversarial_verifier = adversarial_verifier and f.adversarial_verifier
             adversarial_threshold = (
@@ -439,6 +441,7 @@ class SourceHuntRunner:
         self._gvisor_runtime = gvisor_runtime
         self._preprocessing = preprocessing
         self._seed_harness_crashes = seed_harness_crashes
+        self._fuzz_stage = fuzz_stage
 
     def _inject_campaign_pool(
         self,
@@ -572,10 +575,51 @@ class SourceHuntRunner:
                     pipeline_status=pipeline_status,
                 )
 
-            # 2.5. Harness Generator (crash-first ordering) — at depth=deep or
-            #      when seed_harness_crashes is explicitly enabled (spec 018).
+            # 2.5. Crash-first seeding — two backends:
+            #      - fuzz_stage (spec 018 v2): OSS-Fuzz-Gen-style synthesis with
+            #        build-error repair, real libFuzzer runs, signature-deduped
+            #        crashes. Emits seeded crashes AND canonical findings at
+            #        crash_reproduced (unlocking exploit triage).
+            #      - legacy HarnessGenerator (spec 018): one-shot harness
+            #        compiles in the hunter sandbox.
             seeded_crashes: list[SeededCrash] = []
-            if self.depth == "deep" or self._seed_harness_crashes:
+            fuzz_findings: list[Finding] = []
+            if self._fuzz_stage:
+                harness_llm = self._get_native_client("hunter", self.hunter_llm)
+                if harness_llm is not None:
+                    try:
+                        from .fuzz_stage import FuzzStageConfig, run_fuzz_stage
+
+                        fs_result = await asyncio.to_thread(
+                            run_fuzz_stage,
+                            files,
+                            repo_path,
+                            harness_llm,
+                            config=FuzzStageConfig(),
+                            work_dir=(
+                                Path(self.output_dir) / self._session_id / "fuzz_stage"
+                            ),
+                            project_name=None,
+                            session_id=self._session_id,
+                        )
+                        seeded_crashes = fs_result.seeded_crashes
+                        fuzz_findings = fs_result.findings
+                        for err in fs_result.errors:
+                            logger.warning("Fuzz stage: %s", err)
+                        logger.info(
+                            "Fuzz stage produced %d crashes from %d/%d harnesses, %d findings",
+                            fs_result.unique_crashes,
+                            fs_result.harnesses_succeeded,
+                            fs_result.harnesses_attempted,
+                            len(fuzz_findings),
+                        )
+                    except Exception:
+                        logger.warning("Fuzz stage failed", exc_info=True)
+                        pipeline_status.record_degraded(
+                            "fuzz_stage",
+                            "No seeded crashes available; hunting without crash context",
+                        )
+            elif self.depth == "deep" or self._seed_harness_crashes:
                 harness_llm = self._get_native_client("hunter", self.hunter_llm)
                 harness_sandbox = self._sandbox_manager or self.sandbox_factory
                 if harness_llm is not None and harness_sandbox is not None:
@@ -690,6 +734,16 @@ class SourceHuntRunner:
                     logger.warning("Historical findings DB load failed", exc_info=True)
                     historical_db = None
 
+            # Fuzz-stage findings join the shared pool BEFORE the hunt so
+            # root-cause dedup and primitive chaining see them. Note:
+            # FindingsPool.add() takes only the finding (no session kwarg).
+            if fuzz_findings and findings_pool is not None:
+                for fuzz_finding in fuzz_findings:
+                    try:
+                        await findings_pool.add(fuzz_finding)
+                    except Exception:
+                        logger.debug("Pool add failed for fuzz finding", exc_info=True)
+
             # 3. Tiered hunt
             hunter_llm = self._get_native_client("hunter", self.hunter_llm)
             all_findings: list[Finding] = []
@@ -785,6 +839,13 @@ class SourceHuntRunner:
             # Promote static findings into the all_findings list so depth=quick
             # output is still useful when no hunter llm is available
             all_findings = self._merge_static_findings(all_findings, preprocess_result)
+
+            # Fuzz-stage crash findings join the main flow: they proceed
+            # through the verifier, exploit triage (which gates on
+            # crash_reproduced), reporting, and disclosure like any finding.
+            if fuzz_findings:
+                all_findings.extend(fuzz_findings)
+                logger.info("Merged %d fuzz-stage findings", len(fuzz_findings))
 
             # 3.5. Persist findings to historical DB (spec 005)
             # Skip when running under campaign — campaign handles bulk ingestion.

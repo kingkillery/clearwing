@@ -22,13 +22,51 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shlex
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
+# --- Path safety for shell rendering ---------------------------------------
+# Repo-derived paths are untrusted input (we hunt arbitrary checkouts) and
+# end up interpolated into generated shell scripts. Two complementary
+# defenses: semantic validation here (relative, traversal-free), and
+# shlex.quote() at every assignment/interpolation site (character-level
+# safety without rejecting legitimate filenames containing spaces).
+
+
+def validate_repo_rel_path(path: str) -> str:
+    """Normalize and validate a repo-relative path for shell use.
+
+    Returns the normalized POSIX path. Raises ValueError on absolute
+    paths or ``..`` traversal — character-level safety is handled by
+    shlex quoting, so spaces and UTF-8 remain allowed.
+    """
+    normalized = path.replace("\\", "/")
+    p = PurePosixPath(normalized)
+    if not normalized or p.is_absolute() or ".." in p.parts:
+        raise ValueError(f"unsafe repo-relative path: {path!r}")
+    return str(p)
+
+
+def fuzzer_output_name(repo_rel_path: str) -> str:
+    """Unique, shell-safe fuzzer binary name for a repo-relative path.
+
+    Readable sanitized prefix + path-hash suffix: same-stem harnesses
+    (``src/parser.cc`` vs ``vendor/parser.cc``) must never share an
+    output binary in $OUT.
+    """
+    import hashlib
+
+    normalized = repo_rel_path.replace("\\", "/")
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:8]
+    stem = re.sub(r"[^a-z0-9_-]+", "-", Path(normalized).stem.lower()).strip("-")
+    return f"{stem or 'target'}-{digest}"
+
+
 
 # --- Language → base-builder image mapping ----------------------------------
 # Mirrors https://github.com/google/oss-fuzz/tree/master/infra/base-images
@@ -209,11 +247,12 @@ class OssFuzzProject:
             "# --- Link fuzz targets against $LIB_FUZZING_ENGINE -----------------",
         ]
         for harness in harnesses:
-            stem = Path(harness).stem
+            safe_harness = validate_repo_rel_path(harness)
+            out_name = fuzzer_output_name(safe_harness)
             out.append(
-                f"$CXX $CXXFLAGS -I$SRC/{self.name} "
-                f"$SRC/{self.name}/{harness} "
-                f"-o $OUT/{stem} $LIB_FUZZING_ENGINE"
+                f'$CXX $CXXFLAGS -I"$SRC/{self.name}" '
+                f'"$SRC/{self.name}/"{shlex.quote(safe_harness)} '
+                f'-o "$OUT/{out_name}" $LIB_FUZZING_ENGINE'
             )
         out.append("")
         return "\n".join(out)

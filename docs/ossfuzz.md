@@ -121,6 +121,43 @@ clearwing ossfuzz run ./projects/myproj --source ./myproj --seconds 300 \
     --work-dir ./results/ossfuzz/myproj
 ```
 
+## The sourcehunt fuzz stage (`--fuzz-stage`)
+
+The pipeline's crash-first stage (2.5) can run on this infrastructure
+instead of the legacy one-shot HarnessGenerator:
+
+```bash
+clearwing sourcehunt https://github.com/example/project --fuzz-stage
+```
+
+Per eligible file (high-surface parser/fuzzable C/C++, same selection as
+the legacy stage):
+
+1. **Synthesize** — `ossfuzz.synthesize.HarnessSynthesizer` asks the LLM
+   for a libFuzzer harness, builds it *with the target file* against
+   `$LIB_FUZZING_ENGINE`, and on failure feeds the compiler stderr back
+   to the model (default 4 rounds) — the OSS-Fuzz-Gen repair loop that
+   multiplies working-harness rates versus one-shot generation.
+2. **Fuzz** — each accepted harness runs with a real libFuzzer budget in
+   a fresh, networkless container. Crash artifacts land in
+   `<session>/fuzz_stage/crashes/<fuzzer>/` (per-invocation staging, so
+   stale artifacts are never misattributed).
+3. **Seed** — unique crashes (ClusterFuzz-style signature dedup) flow to
+   the hunters as `SeededCrash` context ("explain this crash" instead of
+   cold-reading) AND into the findings pool and main finding flow as
+   canonical findings at `crash_reproduced` — which unlocks exploit
+   triage on them.
+
+Harnesses are injected into the build container (`extra_files`) — the
+host checkout is never modified. Harness/fuzzer names are path-hash
+unique (`src/parser.c` vs `vendor/parser.c` cannot collide), and
+repo-derived paths are validated (relative, traversal-free) and
+`shlex`-quoted at every shell boundary.
+
+The stage is fail-open: no Docker, no LLM, or zero compiling harnesses
+degrades to the normal hunt. Requires Docker (the base-builder image is
+pulled on first use, ~2 GB).
+
 ## Bridge into sourcehunt
 
 `clearwing.ossfuzz.bridge` adapts fuzz results into pipeline shapes:

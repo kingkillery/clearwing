@@ -94,6 +94,11 @@ input for the next:
    harness, compile it in the sandbox with ASan, run for a per-file
    budget, capture any crashes. Hunters for fuzzed files then get
    the easier "explain this crash" prompt instead of cold-reading.
+   With `--fuzz-stage`, this stage runs on the OSS-Fuzz plumbing
+   instead (`clearwing.sourcehunt.fuzz_stage`): repair-looped harness
+   synthesis (`clearwing.ossfuzz.synthesize`), real libFuzzer budgets,
+   signature-deduped crashes, and canonical findings emitted at
+   `crash_reproduced` alongside the seeded-crash hunter context.
 4. **Tiered hunt** (`clearwing.sourcehunt.pool.HunterPool`) — files
    split into Tier A/B/C by priority. Budget allocated 70/25/5 with
    rollover. Tier C files get a narrower `build_propagation_auditor_tools(ctx)`
