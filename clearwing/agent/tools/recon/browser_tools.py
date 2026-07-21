@@ -20,7 +20,16 @@ _browser_state: dict[str, Any] = {
 
 
 def _ensure_browser() -> None:
-    """Lazily initialize the browser if not already running."""
+    """Lazily initialize the browser if not already running.
+
+    On ANY initialization failure the partially created driver/browser
+    is torn down and state reset before re-raising. Without this, a
+    failed `chromium.launch()` (missing executable, display issues)
+    leaks the started Playwright driver — whose internal event loop
+    keeps running in the calling thread, so every later
+    `AgentTool.invoke()` in that thread returns an unawaited coroutine
+    instead of running the tool (the session-poisoning failure mode).
+    """
     if _browser_state["browser"] is not None:
         return
 
@@ -28,12 +37,30 @@ def _ensure_browser() -> None:
 
     pw = sync_playwright().start()
     _browser_state["_pw"] = pw
-    browser = pw.chromium.launch(headless=True)
-    _browser_state["browser"] = browser
-    _browser_state["context"] = browser.new_context(
-        ignore_https_errors=True,
-        user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Clearwing/1.0",
-    )
+    browser = None
+    try:
+        browser = pw.chromium.launch(headless=True)
+        _browser_state["browser"] = browser
+        _browser_state["context"] = browser.new_context(
+            ignore_https_errors=True,
+            user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Clearwing/1.0",
+        )
+    except Exception:
+        if browser is not None:
+            try:
+                browser.close()
+            except Exception:
+                pass
+        try:
+            pw.stop()
+        except Exception:
+            pass
+        _browser_state["_pw"] = None
+        _browser_state["browser"] = None
+        _browser_state["context"] = None
+        _browser_state["tabs"] = {}
+        _browser_state["active_tab"] = None
+        raise
 
 
 def _get_page(tab_name: str | None = None) -> Any:

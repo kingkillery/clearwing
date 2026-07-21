@@ -6,9 +6,9 @@ import threading
 
 import pytest
 
+import clearwing.agent.tools.recon.auth_recorder as recorder_mod
 from clearwing.agent.tools.recon.auth_recorder import (
     AuthFlowEvent,
-    AuthFlowRecord,
     _RecordingState,
     _saved_flows,
     diff_auth_flows,
@@ -18,8 +18,6 @@ from clearwing.agent.tools.recon.auth_recorder import (
 )
 from clearwing.agent.tools.recon.proxy_tools import _proxy_history
 from clearwing.agent.tools.recon.webcrypto_hooks import CryptoLog, _crypto_logs, _hooks_installed
-
-import clearwing.agent.tools.recon.auth_recorder as recorder_mod
 
 
 @pytest.fixture(autouse=True)
@@ -240,3 +238,72 @@ class TestGetAuthRecorderTools:
         tools = get_auth_recorder_tools()
         names = [t.name for t in tools]
         assert names == ["start_auth_recording", "stop_auth_recording", "diff_auth_flows"]
+
+
+# --- _try_extract_srp regression (nested invoke returned coroutine) ---
+
+
+class TestTryExtractSrp:
+    """_try_extract_srp must return a dict/None — never a coroutine.
+
+    Regression: it used extract_srp_values.invoke(), which can return an
+    unawaited coroutine depending on loop context; the caller then blew
+    up on srp_values.get("kdf").
+    """
+
+    def _seed(self, monkeypatch):
+        log = _setup_crypto_log()
+        log.add_batch([{"method": "deriveBits", "seq": 0}])
+        # Stub the browser flush: these tests pin the coroutine contract,
+        # not browser behavior. A real flush starts Playwright, and a
+        # failed launch leaves a running loop in this thread — poisoning
+        # every later .invoke() in the session.
+        monkeypatch.setattr(
+            "clearwing.agent.tools.recon.webcrypto_hooks._flush_js_log",
+            lambda tab_name: None,
+        )
+
+    def test_sync_context_returns_not_coroutine(self, monkeypatch):
+        self._seed(monkeypatch)
+        result = recorder_mod._try_extract_srp("default", [{"method": "deriveBits"}])
+        assert result is None or isinstance(result, dict)
+        import inspect
+
+        assert not inspect.iscoroutine(result)
+
+    def test_running_loop_context_returns_not_coroutine(self, monkeypatch):
+        """Regression context: _try_extract_srp executes while an event loop
+        is running in its thread — a regressed .invoke() would return an
+        unawaited coroutine here. Plugin-independent: the loop runs in a
+        fresh thread because this test environment cannot reliably host
+        pytest-asyncio."""
+        import asyncio
+        import inspect
+
+        self._seed(monkeypatch)
+        outcome: dict = {}
+
+        def _run():
+            async def _coro():
+                # Direct call with the loop active in this thread — the
+                # exact context where .invoke() misbehaves.
+                return recorder_mod._try_extract_srp(
+                    "default", [{"method": "deriveBits"}]
+                )
+
+            try:
+                outcome["result"] = asyncio.run(_coro())
+            except Exception as exc:  # noqa: BLE001
+                outcome["error"] = exc
+
+        worker = threading.Thread(target=_run)
+        worker.start()
+        worker.join(timeout=30)
+        assert not worker.is_alive(), "worker thread hung"
+        assert "error" not in outcome, outcome["error"]
+        result = outcome.get("result")
+        assert not inspect.iscoroutine(result)
+        assert result is None or isinstance(result, dict)
+
+    def test_empty_entries_short_circuits(self):
+        assert recorder_mod._try_extract_srp("default", []) is None

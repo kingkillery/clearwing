@@ -337,7 +337,10 @@ def _try_extract_srp(tab_name: str, crypto_entries: list[dict]) -> dict | None:
     try:
         from clearwing.agent.tools.recon.webcrypto_hooks import extract_srp_values
 
-        return extract_srp_values.invoke({"tab_name": tab_name})
+        # Direct call (__call__ → sync func), not .invoke(): nested invoke
+        # from async-managed contexts can return an unawaited coroutine
+        # instead of the result dict. extract_srp_values is synchronous.
+        return extract_srp_values(tab_name=tab_name)
     except Exception:
         return None
 

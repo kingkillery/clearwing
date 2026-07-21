@@ -57,3 +57,94 @@ class TestBrowserClose:
         result = browser_close.invoke({})
         assert result["closed"] == "all"
         assert result["remaining_tabs"] == []
+
+
+class TestEnsureBrowserCleanup:
+    """A failed browser launch must not leak the Playwright driver.
+
+    sync_playwright().start() spawns a driver whose internal event loop
+    keeps running in the calling thread. If chromium.launch() then fails
+    and pw.stop() is never called, that loop poisons the thread: every
+    later AgentTool.invoke() returns an unawaited coroutine instead of
+    running the tool.
+    """
+
+    def test_launch_failure_stops_driver_and_resets_state(self, monkeypatch):
+        import asyncio
+
+        import clearwing.agent.tools.recon.browser_tools as bt
+
+        stop_calls = []
+
+        class FakeChromium:
+            def launch(self, headless=True):
+                raise RuntimeError("Executable doesn't exist (fake)")
+
+        class FakePlaywright:
+            def __init__(self):
+                self.chromium = FakeChromium()
+
+            def stop(self):
+                stop_calls.append(True)
+
+        class FakeSyncPlaywright:
+            def start(self):
+                return FakePlaywright()
+
+        monkeypatch.setattr(bt, "_browser_state", {
+            "browser": None, "context": None, "tabs": {}, "active_tab": None,
+        })
+        # Patch the sync_playwright factory imported inside _ensure_browser
+        import playwright.sync_api as sync_api
+
+        monkeypatch.setattr(sync_api, "sync_playwright", lambda: FakeSyncPlaywright())
+
+        try:
+            bt._ensure_browser()
+            raise AssertionError("expected launch failure")
+        except RuntimeError:
+            pass
+
+        assert stop_calls == [True], "pw.stop() was not called on launch failure"
+        assert bt._browser_state["_pw"] is None
+        assert bt._browser_state["browser"] is None
+        assert bt._browser_state["context"] is None
+        assert bt._browser_state["tabs"] == {}
+
+        # The calling thread must not have a leftover running loop
+        try:
+            asyncio.get_running_loop()
+            leaked = True
+        except RuntimeError:
+            leaked = False
+        assert not leaked, "failed browser launch leaked a running event loop"
+
+    def test_launch_failure_reraises(self, monkeypatch):
+        import clearwing.agent.tools.recon.browser_tools as bt
+
+        class FakeChromium:
+            def launch(self, headless=True):
+                raise ValueError("boom")
+
+        class FakePlaywright:
+            def __init__(self):
+                self.chromium = FakeChromium()
+
+            def stop(self):
+                pass
+
+        class FakeSyncPlaywright:
+            def start(self):
+                return FakePlaywright()
+
+        monkeypatch.setattr(bt, "_browser_state", {
+            "browser": None, "context": None, "tabs": {}, "active_tab": None,
+        })
+        import playwright.sync_api as sync_api
+
+        monkeypatch.setattr(sync_api, "sync_playwright", lambda: FakeSyncPlaywright())
+
+        import pytest
+
+        with pytest.raises(ValueError, match="boom"):
+            bt._ensure_browser()
