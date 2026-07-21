@@ -145,6 +145,11 @@ clearwing disclose review
 # OSS-Fuzz crash severity benchmark
 clearwing bench ossfuzz --corpus-dir ./oss-fuzz-projects --mode standard
 
+# OSS-Fuzz format: build a target, fuzz it, validate a patch
+clearwing ossfuzz run ./projects/myproj --source ./myproj --seconds 300
+clearwing ossfuzz check-patch ./projects/myproj --source ./myproj \
+    --diff fix.patch --crash ./out/crashes/fuzz_parse/crash-ab12
+
 # A/B test whether preprocessing helps or hurts
 clearwing eval preprocessing --project https://github.com/example/project \
     --configs glasswing_minimal,sourcehunt_full --runs 3
@@ -258,6 +263,7 @@ Deep dives live in [`docs/`](docs/):
 | [`docs/quickstart.md`](docs/quickstart.md) | Full install + first run walkthrough |
 | [`docs/providers.md`](docs/providers.md) | OpenRouter / Ollama / LM Studio / vLLM / Together / Groq recipes, per-task routing, env-var precedence |
 | [`docs/architecture.md`](docs/architecture.md) | Both pipelines, substrate, capability gating, tool layout |
+| [`docs/ossfuzz.md`](docs/ossfuzz.md) | OSS-Fuzz project format, corpus access, build/fuzz/patch-check plumbing |
 | [`docs/cli.md`](docs/cli.md) | Every subcommand flag, grouped by workflow |
 | [`docs/api.md`](docs/api.md) | API reference (mkdocstrings autogen) |
 

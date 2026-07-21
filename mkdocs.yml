@@ -41,6 +41,7 @@ nav:
   - FFmpeg case study: FFmpeg.md
   - Architecture: architecture.md
   - CLI reference: cli.md
+  - OSS-Fuzz integration: ossfuzz.md
   - API reference: api.md
   - Web API (WebSocket): web-api.md
 

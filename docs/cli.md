@@ -296,6 +296,39 @@ clearwing bench compare <file_a> <file_b>  # compare two result files
 tier 5 = full control flow hijack). Modes control scale: `quick`
 (100 targets), `standard` (1000), `full` (7000), `deep` (100 x 10 runs).
 
+## `ossfuzz` — OSS-Fuzz project format builds, fuzzing, patch validation
+
+```bash
+clearwing ossfuzz scaffold NAME             # write project.yaml + Dockerfile + build.sh
+  [--language c] [--repo URL] [--homepage URL]
+  [--sanitizers address,undefined]          # default: address,undefined
+  [--harnesses fuzz_a.c ...] --out DIR
+
+clearwing ossfuzz list                      # list a google/oss-fuzz checkout's projects
+  [--oss-fuzz-dir DIR]                      # default: $CLEARWING_OSS_FUZZ_DIR or ~/.clearwing/oss-fuzz
+  [--language LANG] [--sanitizer SAN] [--json]
+
+clearwing ossfuzz build PROJECT_DIR         # base-builder container build ($SRC/$OUT/$WORK)
+  --source DIR --out DIR [--sanitizer address] [--image IMG] [--apt pkg ...]
+
+clearwing ossfuzz fuzz OUT_DIR              # run a fuzzer, collect + dedup crashes
+  --fuzzer NAME [--seconds 60] [--corpus DIR] [--crashes-dir DIR]
+  [--image IMG] [--project NAME] [--findings-json FILE]
+
+clearwing ossfuzz check-patch PROJECT_DIR   # Buttercup-style patch validation (fail-closed)
+  --source DIR --diff FILE --crash FILE [--fuzzer NAME]
+  [--sanitizer address] [--image IMG]
+
+clearwing ossfuzz run PROJECT_DIR           # build + fuzz + findings JSON in one shot
+  --source DIR [--fuzzer NAME] [--seconds 60] [--sanitizer address]
+  [--work-dir DIR] [--findings-json FILE]
+```
+
+Crash findings are emitted on the canonical evidence ladder at
+`crash_reproduced` with ClusterFuzz-style signature dedup; `check-patch`
+exits 0 only when the crash is reproduced pre-patch and gone post-patch.
+See [OSS-Fuzz integration](ossfuzz.md).
+
 ## `eval` — evaluation and A/B testing
 
 ```bash

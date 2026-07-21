@@ -193,6 +193,7 @@ module = [
     "clearwing.core.*",
     "clearwing.agent.runtime",
     "clearwing.agent.protocols",
+    "clearwing.ossfuzz.*",
     "clearwing.providers.manager",
 ]
 disallow_untyped_defs = true

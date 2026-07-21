@@ -13,6 +13,7 @@ from . import (
     interactive,
     mcp,
     operate,
+    ossfuzz,
     parallel,
     report,
     scan,
@@ -41,5 +42,6 @@ ALL_COMMANDS = [
     disclose,
     campaign,
     bench,
+    ossfuzz,
     eval,
 ]
