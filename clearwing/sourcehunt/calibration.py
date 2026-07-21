@@ -7,12 +7,16 @@ assessments over time. Target: 89% exact match (Glasswing reference).
 from __future__ import annotations
 
 import contextlib
-import fcntl
 import json
 import logging
 import threading
 from pathlib import Path
 from typing import Any, Literal
+
+try:
+    import fcntl
+except ImportError:  # Windows — use msvcrt.locking instead
+    fcntl = None  # type: ignore[assignment]
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -42,12 +46,43 @@ def _calibration_lock(path: Path):
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(path.suffix + ".lock")
     with _STORE_LOCK:
-        with open(lock_path, "a+") as lf:
-            fcntl.flock(lf, fcntl.LOCK_EX)
+        # r+b, not append mode: Windows byte-range locks (msvcrt.locking)
+        # silently do NOT exclude other processes on append-mode handles.
+        lock_path.touch(exist_ok=True)
+        with open(lock_path, "r+b") as lf:
+            _lock_file(lf)
             try:
                 yield
             finally:
-                fcntl.flock(lf, fcntl.LOCK_UN)
+                _unlock_file(lf)
+
+
+def _lock_file(lf: Any) -> None:
+    """Exclusive cross-process lock: flock on POSIX, msvcrt on Windows."""
+    if fcntl is not None:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+    else:
+        import msvcrt
+
+        # msvcrt.locking locks a byte RANGE — on an empty file that range
+        # does not exist and the call can fail, so guarantee a sentinel
+        # byte first, then lock byte 0.
+        lf.seek(0, 2)
+        if lf.tell() == 0:
+            lf.write(b"\0")
+            lf.flush()
+        lf.seek(0)
+        msvcrt.locking(lf.fileno(), msvcrt.LK_LOCK, 1)
+
+
+def _unlock_file(lf: Any) -> None:
+    if fcntl is not None:
+        fcntl.flock(lf, fcntl.LOCK_UN)
+    else:
+        import msvcrt
+
+        lf.seek(0)
+        msvcrt.locking(lf.fileno(), msvcrt.LK_UNLCK, 1)
 
 
 _SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}

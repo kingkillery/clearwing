@@ -142,3 +142,67 @@ class TestCalibrationRace:
             assert len(records) == 20
             for i in range(20):
                 assert records[f"row-{i}"].human_severity is not None, f"row-{i} verdict was lost"
+
+
+class TestCalibrationLockContention:
+    """Cross-process exclusion and empty-sidecar behavior of _calibration_lock."""
+
+    def test_empty_sidecar_locks_cleanly(self, tmp_path):
+        from clearwing.sourcehunt.calibration import _calibration_lock
+
+        target = tmp_path / "cal.jsonl"
+        with _calibration_lock(target):
+            pass  # must not raise even though the .lock sidecar was empty
+        assert (tmp_path / "cal.jsonl.lock").exists()
+
+    def test_cross_process_exclusion(self, tmp_path):
+        """A second process must block until the holder releases.
+
+        Handshake-based: the child writes a ready marker immediately
+        before entering _calibration_lock; the parent (holding the lock)
+        waits for that marker, then holds a known further interval.
+        The child's measured wait therefore excludes process startup.
+        """
+        import subprocess
+        import sys
+        import time
+
+        import clearwing
+        from clearwing.sourcehunt.calibration import _calibration_lock
+
+        repo_root = str(__import__("pathlib").Path(clearwing.__file__).parent.parent)
+        target = tmp_path / "cal.jsonl"
+        ready = tmp_path / "ready.marker"
+        hold_seconds = 1.0
+
+        child_code = (
+            "import sys, time; "
+            f"sys.path.insert(0, {repo_root!r}); "
+            "from pathlib import Path; "
+            "from clearwing.sourcehunt.calibration import _calibration_lock; "
+            f"Path({str(ready)!r}).write_text('ready'); "
+            "t0 = time.monotonic(); "
+            f"ctx = _calibration_lock(Path({str(target)!r})); "
+            "ctx.__enter__(); "
+            "print(f'{time.monotonic() - t0:.2f}', flush=True)"
+        )
+
+        with _calibration_lock(target):
+            proc = subprocess.Popen(
+                [sys.executable, "-c", child_code],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            # Wait for the child to signal it is ABOUT to block on the lock
+            deadline = time.monotonic() + 30
+            while not ready.exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            assert ready.exists(), "child never signaled readiness"
+            time.sleep(hold_seconds)
+        out, err = proc.communicate(timeout=60)
+        assert proc.returncode == 0, f"child failed: {err}"
+        waited = float(out.strip().splitlines()[-1])
+        assert waited >= hold_seconds * 0.7, (
+            f"child did not block on the held lock (waited {waited:.2f}s)"
+        )

@@ -349,3 +349,43 @@ class TestCommitMonitorIntegration:
         on_push = commit_monitor_on_push_factory(fake_monitor)
         # Must not raise
         on_push("acme/tool", "deadbeef", {})
+
+
+class TestMalformedContentLength:
+    """Content-Length validation: malformed → 400, negative → 400, no hang."""
+
+    def _raw_post(self, port, headers: str):
+        import socket
+
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as sock:
+            request = (
+                f"POST /webhook HTTP/1.1\r\nHost: 127.0.0.1\r\n{headers}\r\n\r\n"
+            )
+            sock.sendall(request.encode())
+            sock.settimeout(5)
+            response = b""
+            try:
+                while True:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    response += chunk
+                    if b"\r\n\r\n" in response and len(response.split(b"\r\n\r\n", 1)[1]) > 0:
+                        break
+            except TimeoutError:
+                        pass
+            return response.split(b" ")[1] if b" " in response else b""
+
+    def test_non_integer_content_length_returns_400(self):
+        config = WebhookConfig(secret="s3cret", on_push=MagicMock())
+        with _LiveServer(config) as server:
+            status = self._raw_post(
+                server.server_port, "Content-Length: not-a-number"
+            )
+        assert status == b"400"
+
+    def test_negative_content_length_returns_400_no_hang(self):
+        config = WebhookConfig(secret="s3cret", on_push=MagicMock())
+        with _LiveServer(config) as server:
+            status = self._raw_post(server.server_port, "Content-Length: -5")
+        assert status == b"400"

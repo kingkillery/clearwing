@@ -135,6 +135,20 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body_bytes)
 
+    def _drain_body(self, content_length: int, cap: int = 10 * 1024 * 1024) -> None:
+        """Read and discard up to `cap` bytes of the request body.
+
+        Must be called before responding on early-return paths: closing
+        the connection with unread body data left in the socket makes
+        the OS send RST, and clients see an abort instead of the response.
+        """
+        remaining = min(content_length, cap)
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 65536))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+
     def do_GET(self) -> None:
         """Health-check endpoint."""
         if self.path in ("/health", "/healthz"):
@@ -150,15 +164,37 @@ class _Handler(BaseHTTPRequestHandler):
         config = server.config
         stats = server.stats
 
+        # Parse Content-Length up front: every early-return path below must
+        # drain the (bounded) request body before responding. Closing a
+        # socket with unread inbound data makes the TCP stack RST instead
+        # of FIN, and the client sees a connection abort (WinError 10053)
+        # instead of our response — reproducible on Windows.
+        try:
+            content_length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            content_length = -1
+        if content_length < 0:
+            # Malformed/negative length: the body boundary is unknowable,
+            # so keep-alive is unsafe — respond and force the connection
+            # closed rather than risking a blocking read.
+            self.close_connection = True
+            self._respond(400, "invalid content-length\n")
+            return
+
+        # Over the cap: 413 + close BEFORE any path handling — the
+        # wrong-path drain is bounded to the cap, so an oversized body on
+        # any path must short-circuit here rather than leave bytes unread
+        # (which would RST the connection).
+        if content_length > 10 * 1024 * 1024:
+            self.close_connection = True
+            self._respond(413, "payload too large\n")
+            return
+
         if self.path != config.path:
+            self._drain_body(content_length)
             self._respond(404, "not found\n")
             return
 
-        # Read the body (cap at 10 MB — GitHub pushes shouldn't exceed this)
-        content_length = int(self.headers.get("Content-Length") or 0)
-        if content_length > 10 * 1024 * 1024:
-            self._respond(413, "payload too large\n")
-            return
         body_bytes = self.rfile.read(content_length) if content_length else b""
 
         stats.received += 1

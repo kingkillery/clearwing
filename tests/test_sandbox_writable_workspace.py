@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch, call
+import os
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -187,9 +188,9 @@ class TestHunterSandboxWritableWorkspace:
             with patch.object(SandboxContainer, "copy_tree_into") as mock_copy:
                 with patch.object(SandboxContainer, "exec") as mock_exec:
                     mock_exec.return_value = MagicMock(exit_code=0)
-                    sb = manager.spawn(writable_workspace=True)
+                    manager.spawn(writable_workspace=True)
 
-        mock_copy.assert_called_once_with("/tmp/repo", "/workspace")
+        mock_copy.assert_called_once_with(os.path.abspath("/tmp/repo"), "/workspace")
         # git init should have been called
         git_calls = [
             c
