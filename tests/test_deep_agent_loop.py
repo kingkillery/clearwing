@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -28,6 +27,7 @@ class FakeResponse:
         self._tool_calls = tool_calls_list or []
         self.usage = usage or FakeUsage()
         self.provider_model_name = "test-model"
+        self.reasoning_content = None
 
     def first_text(self):
         return self._text
@@ -140,7 +140,7 @@ async def test_deep_mode_no_repeated_call_throttle():
     with patch("clearwing.sourcehunt.hunter.HunterTrajectoryLogger") as mock_traj:
         mock_logger = MagicMock()
         mock_traj.for_hunter.return_value = mock_logger
-        result = await hunter.arun()
+        await hunter.arun()
 
     # In deep mode, repeated calls should NOT be throttled
     logged = mock_logger.log.call_args_list
@@ -167,7 +167,7 @@ async def test_constrained_mode_throttles_repeated_calls():
     with patch("clearwing.sourcehunt.hunter.HunterTrajectoryLogger") as mock_traj:
         mock_logger = MagicMock()
         mock_traj.for_hunter.return_value = mock_logger
-        result = await hunter.arun()
+        await hunter.arun()
 
     # In constrained mode, after 3 identical calls the 4th+ should be skipped
     logged = mock_logger.log.call_args_list

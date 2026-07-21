@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -195,10 +196,34 @@ class TestJSPayload:
 
 
 class TestInstallOnBlankPage:
-    def test_succeeds_with_init_script(self):
+    def test_succeeds_with_init_script(self, monkeypatch):
+        """Deterministic: browser internals faked, no real Playwright.
+
+        Verifies the init-script and page-evaluate installation paths
+        receive the instrumentation payload and the tab is registered.
+        """
+        import clearwing.agent.tools.recon.browser_tools as browser_tools
+        import clearwing.agent.tools.recon.webcrypto_hooks as hooks_mod
+
+        fake_context = MagicMock()
+        fake_page = MagicMock()
+        monkeypatch.setattr(browser_tools, "_ensure_browser", lambda: None)
+        monkeypatch.setattr(browser_tools, "_get_page", lambda tab_name: fake_page)
+        monkeypatch.setattr(
+            browser_tools, "_browser_state", {"context": fake_context}
+        )
+        monkeypatch.setattr(hooks_mod, "_context_hooks_installed", False)
+
         result = install_webcrypto_hooks.invoke({})
+
         assert result["success"] is True
-        assert result["methods_hooked"] == _SUBTLE_METHODS
+        assert result["methods_hooked"] == list(_SUBTLE_METHODS)
+        fake_context.add_init_script.assert_called_once_with(
+            _WEBCRYPTO_INSTRUMENT_JS
+        )
+        fake_page.evaluate.assert_called_once_with(_WEBCRYPTO_INSTRUMENT_JS)
+        assert "default" in hooks_mod._hooks_installed
+        assert "default" in hooks_mod._crypto_logs
 
 
 class TestGetLogWithoutHooks:

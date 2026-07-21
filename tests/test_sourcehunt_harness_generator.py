@@ -379,6 +379,13 @@ class TestHuntPoolSeededCrashPlumbing:
         )
         pool = HunterPool(cfg)
 
+        # pool caches build_hunter_agent in the module global
+        # _DEFAULT_HUNTER_FACTORY on first use — reset it so the patch
+        # below is what actually gets called.
+        import clearwing.sourcehunt.pool as pool_mod
+
+        pool_mod._DEFAULT_HUNTER_FACTORY = None
+
         with patch("clearwing.sourcehunt.hunter.build_hunter_agent") as mock_build:
             mock_build.return_value = (MagicMock(), MagicMock(session_id="s1"))
             pool._build_hunter_for_file(ft, sandbox=None)

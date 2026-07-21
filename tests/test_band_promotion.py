@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -13,7 +11,6 @@ from clearwing.sourcehunt.pool import (
     BandBudget,
     HunterPool,
     HuntPoolConfig,
-    WorkItem,
     _file_rank,
     _redundancy_for_rank,
     promotion_decision,
@@ -217,7 +214,6 @@ class TestHunterRunResult:
         from unittest.mock import patch as mock_patch
 
         from clearwing.agent.tools.hunt.sandbox import HunterContext
-        from clearwing.llm.native import NativeToolSpec
         from clearwing.sourcehunt.hunter import NativeHunter
 
         @dataclass
@@ -230,6 +226,7 @@ class TestHunterRunResult:
             def __init__(self):
                 self.usage = FakeUsage()
                 self.provider_model_name = "test-model"
+                self.reasoning_content = None
 
             def first_text(self):
                 return "No vulnerabilities found."
@@ -287,6 +284,7 @@ class TestBudgetEnforcement:
             def __init__(self):
                 self.usage = FakeUsage()
                 self.provider_model_name = "test-model"
+                self.reasoning_content = None
 
             def first_text(self):
                 return ""
