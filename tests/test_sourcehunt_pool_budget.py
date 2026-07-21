@@ -6,6 +6,8 @@ so we can exercise the budget math without any LLM or sandbox calls.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 
@@ -263,3 +265,99 @@ class TestSpentPerTier:
         assert spent["C"] == pytest.approx(0.5)
         # Total
         assert pool.total_spent == pytest.approx(2.0)
+
+
+
+# --- Reservation-based hard cap (regression: sh-70f0d515 overspend) --------
+
+
+class _CapRecordingPool(HunterPool):
+    """HunterPool whose _run_file_task records the submitted cost_limit and
+    returns cost_usd == cost_limit after an async barrier, so all max_parallel
+    tasks are genuinely in flight before any spend is recorded. This is the
+    exact interleaving that let sh-70f0d515 spend $13.58 against --budget 5.
+    """
+
+    def __init__(self, config, overshoot: float = 1.0):
+        super().__init__(config)
+        self.submitted_caps: list[float] = []
+        self._overshoot = overshoot
+        self._barrier = asyncio.Event()
+        self._arrived = 0
+
+    async def _run_file_task(self, file_target, cost_limit, tier, band="",
+                             seed_transcript=None, entry_point=None,
+                             seed_context=None):
+        from clearwing.runners.parallel.executor import TargetResult
+
+        self.submitted_caps.append(cost_limit)
+        self._arrived += 1
+        if self._arrived >= self.config.max_parallel:
+            self._barrier.set()
+        try:
+            await asyncio.wait_for(self._barrier.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            pass  # fewer files than max_parallel — proceed
+        return TargetResult(
+            target=file_target.get("path", ""),
+            status="completed",
+            findings=[],
+            cost_usd=cost_limit * self._overshoot,
+            tokens_used=0,
+            tier=tier,
+            band=band,
+            stop_reason="budget_exhausted",
+        )
+
+
+def _cap_test_config(files, budget, max_parallel):
+    return HuntPoolConfig(
+        files=files,
+        repo_path="/tmp/repo",
+        sandbox_factory=None,
+        hunter_factory=MagicMock(),  # unused — _run_file_task is overridden
+        max_parallel=max_parallel,
+        budget_usd=budget,
+        tier_budget=TierBudget(1.0, 0.0, 0.0),  # everything through tier A
+        starting_band="fast",
+        max_band="fast",  # disable promotion to isolate the cap math
+        redundancy_override=1,
+    )
+
+
+class TestReservationHardCap:
+    def test_parallel_dispatch_cannot_exceed_budget(self):
+        """8 parallel fast-band ($5 cap) hunters against a $5 budget must not
+        commit $40 before the first result lands."""
+        files = [_ft(f"f{i}.c", 5, 5) for i in range(8)]  # all tier A
+        pool = _CapRecordingPool(_cap_test_config(files, budget=5.0, max_parallel=8))
+        pool.run()
+        assert pool.total_spent <= 5.0 + 1e-9
+        # Parallelism preserved: all 8 slots filled, each reserving an equal
+        # $0.625 slice of the $5 budget instead of the blind $5 band cap.
+        assert len(pool.submitted_caps) == 8
+        assert pool.submitted_caps == pytest.approx([0.625] * 8)
+
+    def test_slot_shares_shrink_as_reservations_accumulate(self):
+        """Each successive dispatch in a wave must reserve <= the remaining
+        budget divided by fillable slots — never the raw band cap for all."""
+        files = [_ft(f"f{i}.c", 5, 5) for i in range(8)]
+        pool = _CapRecordingPool(_cap_test_config(files, budget=5.0, max_parallel=8))
+        pool.run()
+        # First wave: sum of reservations must not exceed the budget
+        first_wave = pool.submitted_caps[:8]
+        assert sum(first_wave) <= 5.0 + 1e-9
+
+    def test_overshoot_breach_stops_further_dispatch(self, caplog):
+        """A hunter whose true cost overruns its reservation (one in-flight
+        LLM call) must be detected, logged, and halt all new dispatch."""
+        files = [_ft(f"f{i}.c", 5, 5) for i in range(4)]
+        pool = _CapRecordingPool(
+            _cap_test_config(files, budget=2.0, max_parallel=1),
+            overshoot=3.0,  # each task bills 3x its reservation
+        )
+        with caplog.at_level(logging.WARNING, logger="clearwing.sourcehunt.pool"):
+            pool.run()
+        # First task got the whole $2; it billed $6 → remaining <= 0 → stop
+        assert len(pool.submitted_caps) == 1
+        assert any("overspent its reservation" in r.message for r in caplog.records)

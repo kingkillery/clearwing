@@ -5,27 +5,7 @@ on this repo; this file is the tracker.)
 
 ## Open
 
-### 1. Sourcehunt budget cap is not enforced globally
-
-**Observed:** session `sh-70f0d515` (`--budget 5`, depth=standard)
-finished with total spend **$13.58** — 2.7× the cap. Every hunter
-reported `cost_limit=5.00` per file, but the pool kept dispatching.
-
-**Details:** 22 hunter runs across 17 files; tier-A files were re-hunted
-3–4× each (`auth.ts` ×4, `cli-mcp-adapter.ts` ×3, `device-registry.ts` ×3,
-`directory-policy.ts` ×3, `directory-tools.ts` ×3, `index.ts` ×3).
-`HunterPool` appears to gate only per-hunter `cost_limit`, never
-cumulative pool spend.
-
-**Questions:** Is `--budget` meant to be a hard global cap, per-file, or
-advisory? If global, the pool must stop dispatching when cumulative spend
-crosses the cap, and redundancy/band logic needs to account for
-cumulative spend before re-hunting the same file.
-
-**Until fixed:** treat `--budget` as a soft guideline; price runs from
-the final Spend line, not the flag.
-
-### 2. Host-mode hunters can get stuck on sandbox-only tool calls
+### 1. Host-mode hunters can get stuck on sandbox-only tool calls
 
 **Observed:** with Docker unavailable, `HunterSandbox` falls back to host
 mode, but at least one hunter (`src/types.ts`, session `sh-70f0d515`)
@@ -43,6 +23,29 @@ tools.
 sandbox-less runs as reduced-confidence.
 
 ## Fixed
+
+### Sourcehunt budget cap is not enforced globally
+
+**Fixed in this change.** `HunterPool._run_tier_phase` now
+gates dispatch on `spent + reserved`, not `spent` alone: each submitted
+hunter reserves `min(band_cap, remaining / divisor)` where
+`divisor = min(available_slots, unsubmitted_items)`, so a full wave of
+`max_parallel` hunters cannot collectively commit more than the remaining
+budget before any result lands. Reservations are stored per-task and
+released on completion/cancel/timeout (timeout now cancels **and awaits**
+in-flight tasks before returning). Band caps (`BandBudget`) keep their
+per-run semantics; the global cap is enforced only through reservations.
+
+**Residual risk (by design):** a hunter checks cost only *before* each LLM
+call, so one already-in-flight call can overrun its reservation. This is
+detected (`overspent its reservation` WARNING) and stops all further
+dispatch, but the overshoot itself — bounded by one LLM call per
+in-flight hunter — still bills. A truly hard dollar cap would need
+call-level token limiting in the provider layer.
+
+**Tests:** `tests/test_sourcehunt_pool_budget.py::TestReservationHardCap`
+(parallel wave can't exceed budget, slot shares shrink, breach halts
+dispatch).
 
 ### record_finding dropped findings without a CWE
 

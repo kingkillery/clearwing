@@ -371,27 +371,38 @@ class HunterPool:
             else None
         )
         spent = 0.0
-        in_flight: dict[asyncio.Task[TargetResult], WorkItem] = {}
-        item_iter = iter(work_items)
+        reserved = 0.0  # sum of effective caps of in-flight tasks
+        in_flight: dict[asyncio.Task[TargetResult], tuple[WorkItem, float]] = {}
+        pending_items = list(work_items)
         promotion_queue: list[WorkItem] = []
 
         def _submit_next() -> bool:
-            nonlocal spent
-            if self._cancelled or spent >= budget:
+            nonlocal spent, reserved
+            if self._cancelled:
                 return False
-            wi: WorkItem | None = None
-            try:
-                wi = next(item_iter)
-            except StopIteration:
-                if promotion_queue:
-                    wi = promotion_queue.pop(0)
-            if wi is None:
+            available_slots = max(1, self.config.max_parallel) - len(in_flight)
+            if available_slots <= 0:
                 return False
+            unsubmitted = len(pending_items) + len(promotion_queue)
+            if unsubmitted <= 0:
+                return False
+            remaining = budget - spent - reserved
+            if remaining <= 0:
+                return False
+            if pending_items:
+                wi = pending_items.pop(0)
+            else:
+                wi = promotion_queue.pop(0)
             band_cost = self.config.band_budget.for_band(wi.band)
+            # Hard-cap enforcement: each task reserves a slice of the remaining
+            # budget, split across the slots we can actually fill so
+            # parallelism is preserved even when one band cap ~= the budget.
+            divisor = min(available_slots, unsubmitted)
+            effective_cap = min(band_cost, remaining / divisor)
             task = asyncio.create_task(
                 self._run_file_task(
                     wi.file_target,
-                    cost_limit=band_cost,
+                    cost_limit=effective_cap,
                     tier=tier,
                     band=wi.band,
                     seed_transcript=wi.seed_transcript,
@@ -399,7 +410,8 @@ class HunterPool:
                     seed_context=wi.seed_context,
                 )
             )
-            in_flight[task] = wi
+            in_flight[task] = (wi, effective_cap)
+            reserved += effective_cap
             return True
 
         for _ in range(max(1, self.config.max_parallel)):
@@ -419,7 +431,8 @@ class HunterPool:
                     timeout,
                     len(in_flight),
                 )
-                for task, wi in list(in_flight.items()):
+                pending = list(in_flight.items())
+                for task, (wi, _cap) in pending:
                     task.cancel()
                     key = wi.file_target.get("path", "")
                     async with self._state_lock:
@@ -430,10 +443,17 @@ class HunterPool:
                             tier=tier,
                             band=wi.band,
                         )
+                # Await cancellation so sandbox/provider cleanup finishes
+                # before the phase returns — otherwise post-cap spend is
+                # unverifiable.
+                await asyncio.gather(*(t for t, _ in pending), return_exceptions=True)
+                for _task, (_wi, cap) in pending:
+                    reserved -= cap
                 return spent
 
             for task in done:
-                wi = in_flight.pop(task)
+                wi, reserved_cap = in_flight.pop(task)
+                reserved -= reserved_cap
                 key = wi.file_target.get("path", "")
                 try:
                     result = await task
@@ -452,6 +472,15 @@ class HunterPool:
                         error=str(exc),
                         tier=tier,
                         band=wi.band,
+                    )
+                if result.cost_usd > reserved_cap + 1e-9:
+                    # NativeHunter checks cost only before the next LLM call,
+                    # so one in-flight call can overrun the reservation.
+                    # Detect it: spent now absorbs the true cost, which makes
+                    # remaining <= 0 and stops all further dispatch.
+                    logger.warning(
+                        "hunter for %s overspent its reservation: cost=%.4f cap=%.4f",
+                        key, result.cost_usd, reserved_cap,
                     )
                 ep_suffix = f":{wi.entry_point.function_name}" if wi.entry_point else ""
                 async with self._state_lock:
