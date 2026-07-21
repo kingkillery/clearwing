@@ -187,17 +187,17 @@ class TestCreateAgentDelegatesToBuildReactGraph:
             patch("clearwing.agent.graph.connect_mcp_server", create=True) as mock_connect,
             patch("clearwing.agent.graph._create_llm") as mock_create_llm,
         ):
-            mock_connect.invoke.return_value = {"status": "connected"}
+            mock_connect.return_value = {"status": "connected"}
             mock_llm = MagicMock()
             mock_llm.bind_tools = MagicMock(return_value=MagicMock())
             mock_create_llm.return_value = mock_llm
 
             create_agent(model_name="claude-sonnet-4-6")
 
-            mock_connect.invoke.assert_called_once_with(
-                {
-                    "name": "desktop-commander",
-                    "command": "desktop-commander",
-                    "args": [],
-                }
+            # Direct __call__ with kwargs (not .invoke(dict)) — invoke()
+            # returns an unawaited coroutine under a running loop.
+            mock_connect.assert_called_once_with(
+                name="desktop-commander",
+                command="desktop-commander",
+                args=[],
             )
