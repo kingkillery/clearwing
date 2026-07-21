@@ -43,8 +43,37 @@ def _create_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_cve_date ON cve(date_published);
 
         CREATE VIRTUAL TABLE IF NOT EXISTS cve_fts USING fts5(
-            cve_id, description, affected_json, content=''
+            cve_id, description, affected_json
         );
+    """)
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Rebuild a legacy contentless cve_fts in place.
+
+    The original schema declared cve_fts with content='' (contentless).
+    Column reads from a contentless FTS5 table return no data, so the
+    f.cve_id = c.cve_id join in cve_search matched zero rows — search
+    silently returned nothing. CREATE ... IF NOT EXISTS leaves existing
+    databases on the old definition forever, so detect the legacy DDL
+    and rebuild the index from the cve table. Idempotent and cheap.
+    """
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='cve_fts'"
+    ).fetchone()
+    if row is None:
+        _create_schema(conn)
+        return
+    ddl = row[0] or ""
+    if "content=''" not in ddl and 'content=""' not in ddl:
+        return
+    conn.executescript("""
+        DROP TABLE cve_fts;
+        CREATE VIRTUAL TABLE cve_fts USING fts5(
+            cve_id, description, affected_json
+        );
+        INSERT INTO cve_fts(cve_id, description, affected_json)
+            SELECT cve_id, description, affected_json FROM cve;
     """)
 
 
@@ -166,6 +195,7 @@ def _get_conn() -> sqlite3.Connection:
             f"CVE database not found at {db}. Run cve_db_update first."
         )
     conn = sqlite3.connect(str(db))
+    _migrate_schema(conn)
     conn.row_factory = sqlite3.Row
     return conn
 
